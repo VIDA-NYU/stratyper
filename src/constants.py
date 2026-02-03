@@ -1,0 +1,1 @@
+NAN_VALUES = ["", " ", "  ", "No data", "Under review", "s", "s^", "NULL", "N/A", "N / A",'N/A*', "none", "Not Available", "'N/A (no forums held)", 'N/A (no 3Q mtgs)', "NA", "Unknown", "Missing",'`',  " — ", "-", ".", "*", "None", "99/99/9999", "No Data", "R", "#", 'No goal', 'X', 'na', '>', '<', '*', '#', '* ', '# ']

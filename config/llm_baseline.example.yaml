@@ -1,0 +1,47 @@
+# ==========================================
+# FILE PATHS
+# ==========================================
+# REQUIRED: Path to the directory containing input files
+dataset_path: null
+
+# Path for logging (optional). Leave as null to disable.
+log_path: null
+
+
+# ==========================================
+# LLM CONFIGURATION
+# ==========================================
+# The API provider to use (e.g., ollama, openrouter, portkey)
+api: "ollama"
+
+# The specific model name
+model: "phi4:latest"
+
+# Creativity level (0.0 = deterministic, 1.0 = creative)
+temperature: 0.3
+
+
+# ==========================================
+# HYPERMATERS FOR LLM BASELINES
+# ==========================================
+# Prompt strategy to use -> options: 'stratyper', 'naive'
+prompt_type: "stratyper"
+
+# Coverage mode-> options: 'single' to run for each column separately, 'full' to run per dataset
+coverage: "full"
+
+# Specific column to target (optional). Leave as null to process automatically.
+column: null
+
+# Number of rows to use for context/examples
+number_of_rows: 10
+
+
+# ==========================================
+# FEATURE FLAGS
+# ==========================================
+# Run LLM baseline with type reuse enabled
+type_reuse: false
+
+# Enable checking for multiple semantic types per column
+multiple_types: true

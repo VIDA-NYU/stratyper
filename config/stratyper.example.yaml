@@ -1,0 +1,71 @@
+# ==========================================
+# FILE PATHS
+# ==========================================
+# REQUIRED: Path to the directory containing input files
+dataset_path: null
+
+# REQUIRED: Path to store results for this run
+results_path: null
+
+# OPTIONAL: Path to the directory containing embedding files of columns (if there was a previous run of clustering, these might already exist)
+embedding_path: null
+
+# OPTIONAL: Path to metadata files containing descriptions of columns for any dataset (if available)
+metadata_path: null
+
+# OPTIONAL: Filepaths for LLM baseline annotations to use for evaluation (if available) as a dictionary with method names as keys and file paths as values
+other_annotations_paths: null
+
+# ==========================================
+# HYPERMATERS FOR STRATYPER
+# ==========================================
+# Thresholds for clustering columns based on embedding similarity of their names and values
+# Values between 0 and 1, number of similarity thresholds should be the same for both
+# If more than one similrity threshold is provided for names/values, the method will run the iterative cascading discovery method
+# Example: name_clusters: [0.9, 0.8], value_clusters: [0.8, 0.7] -> iterative cascading discovery with 2 levels of clustering
+# Example: name_clusters: [0.75], value_clusters: [0.75] -> single level of clustering with name similarity threshold 0.75 and value similarity threshold 0.75
+name_clusters: []
+value_clusters: []
+
+# Number of columns that must be present in a cluster to consider it valid (default:2, set higher if only dominant types are desired)
+min_cluster_size: 2
+
+# Providers used for each LLM-based task: Column Type Discovery (ctd), Closed-Set Column Type Annotation (ccta) and LLM-as-a-Judge (judge)
+providers: # supported providers: ollama, openrouter, portkey, openai
+  ctd: null
+  ccta: null
+  judge: null
+
+# Models used for each LLM-based task: Column Type Discovery (ctd), Closed-Set Column Type Annotation (ccta) and LLM-as-a-Judge (judge)
+# And model for embedding generation (embedding_model)
+models: 
+  ctd: null
+  ccta: null
+  judge: null
+  embedding_model: null
+
+# Temperature settings for each LLM-based task: Column Type Discovery (ctd), Closed-Set Column Type Annotation (ccta) and LLM-as-a-Judge (judge)
+temperatures:
+  ctd: 0.3 # default:0.3
+  ccta: 0.0 # default:0.0
+  judge: 0.0 # default:0.0
+
+# Value sampling technique (default: 'length', other supported: 'random' -> random sampling, 
+#                                    'sbert' -> sample based on SBERT clustering, 
+#                                    'tf-idf': sampling based on TF-IDF vectorization on 4-grams)
+sampling_type: "length"
+
+# Method to use for context to provid in cluster-based Column Type Discovery
+# One method supported 'most_frequent_k' (k = 5 by default, means top 5 most frequently column names found in the same tables as the columns in the cluster)
+# Can be set to null if no context is desired
+context: "most_frequent_5"
+
+
+# Number of rows to use for context for Closed-Set Column Type Annotation (default:3)
+number_of_rows_ccta: 3
+# Number of value samples to use for Column Type Discovery (default:10)
+number_of_samples_ctd: 10
+# Number of value samples to use for Closed-Set Column Type Annotation (default:10)
+number_of_samples_ccta: 10
+# Number of value samples to use for LLM-as-a-Judge (default:10)
+number_of_samples_judge: 10
