@@ -69,3 +69,6 @@ number_of_samples_ctd: 10
 number_of_samples_ccta: 10
 # Number of value samples to use for LLM-as-a-Judge (default:10)
 number_of_samples_judge: 10
+
+# Whether to run Closed-Set Column Type Annotation (CCTA) refinement for communities with multiple assigned types (default: false)
+ccta_refinement: false

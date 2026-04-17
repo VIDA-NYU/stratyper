@@ -133,7 +133,7 @@ python src/stratyper.py --config config/stratyper.yaml [OPTIONAL --print --evalu
 
 | Flag | Description | Default |
 | --- | --- | --- |
-| `--store_path` | The path to store annotations from LLM Baseline| `False`|
+| `--store_path` | The path to store annotations from LLM Baseline| `None`|
 | `--print` | Print progress | `False` |
 | `--evaluate` | Run LLM-judge evaluation | `False` |
 | `--restart_eval` | Rerun evaluation | `False` |

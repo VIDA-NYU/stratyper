@@ -11,6 +11,7 @@ from constants import NAN_VALUES
 import re
 from difflib import get_close_matches
 import yaml
+import numpy as np 
 
 def llm_cta_directory(dataset_path:str, log_filepath:str=None, api:str='ollama', model:str="phi4:latest", type_reuse:bool=False,
                   coverage:str = "single", multiple_types:bool=False, column:str = None, temperature:float=0.3, number_of_rows:int=3, prompt_type:str='stratyper') -> dict[str, dict[str, list[str]]]:
@@ -98,22 +99,21 @@ def llm_cta_directory(dataset_path:str, log_filepath:str=None, api:str='ollama',
                             semantic_types.add(t)
                 
 
-                invalid_columns = set(cleaned_dict.keys()) - set(df.columns)
+                # Strip surrounding quotes the LLM sometimes wraps column names in
+                cleaned_dict = {k.strip().strip("\"'"): v for k, v in cleaned_dict.items()}
 
+                invalid_columns = set(cleaned_dict.keys()) - set(df.columns)
                 valid_columns = set(df.columns) - set(cleaned_dict.keys())
 
-                valid_lower_to_original = {col.lower(): col for col in valid_columns}
-                
-                for cname in invalid_columns:
-                    types = cleaned_dict[cname]
-                    cleaned_dict.pop(cname)
-                    close_matches = get_close_matches(cname.lower(), {c.lower() for c in valid_columns}, n=1, cutoff=0.8)
+                for cname in list(invalid_columns):
+                    types = cleaned_dict.pop(cname)
+                    close_matches = get_close_matches(cname, valid_columns, n=1, cutoff=0.6)
                     if close_matches:
-                        corrected_name = valid_lower_to_original[close_matches[0]]
+                        corrected_name = close_matches[0]
                         cleaned_dict[corrected_name] = types
-                        valid_columns.remove(corrected_name)  # Remove matched column to prevent duplicate matches
+                        valid_columns.remove(corrected_name)
                     else:
-                        raise ValueError(f"Column name '{cname}' not found in dataset '{dataset}' and no close match found.")
+                        print(f"Warning: column '{cname}' not found in '{dataset}', skipping.")
             else:
                 cleaned_dict = dict()
 
@@ -298,10 +298,11 @@ def judge_column_type(file_path:str, semantic_types:list[str],log_path:str=None,
 
 
 def retrieve_seed_types(file_path:str, log_path_ctd:str, clusters:list[list[tuple[str, str]]],
-                        api_ctd:str='openrouter', model_ctd:str="google/gemini-2.5-flash",  
-                        num_samples:int=10, whole_cluster:bool=True, context:str=None,
+                        api_ctd:str='openrouter', model_ctd:str="google/gemini-3-flash",  
+                        num_samples:int=10, whole_cluster:bool=True, context:str=None, ccta_refinement:bool=False,
+                        logpath_ccta_refinement:str=None, api_ccta_refinement:str=None, model_ccta_refinement:str=None, num_rows:int=None,
                         sampling:str='length', enforce_types:bool=False, temperature:float=0.3) -> tuple[dict[str, set[str]], dict[str, set[str]], dict[int, list[str]], int, int]: 
-     
+      
     inverted_index = dict() # store semantic types associated with each value
     communities_types = dict()
     annotations_stage_1 = dict()
@@ -315,10 +316,15 @@ def retrieve_seed_types(file_path:str, log_path_ctd:str, clusters:list[list[tupl
         community_values = set()
         numeric_flag = False
         non_numeric_flag = False
+        df_cache = {}
         for column in community:
-            df = pd.read_csv(os.path.join(file_path, column[0]), na_values=NAN_VALUES)
-            community_values.update(df[column[1]].dropna().unique())
-            if is_numeric_dtype(df[column[1]]):
+            fname_col, cname_col = column[0], column[1]
+            if fname_col not in df_cache:
+                df_cache[fname_col] = pd.read_csv(os.path.join(file_path, fname_col), na_values=NAN_VALUES)
+            df = df_cache[fname_col]
+            col_vals = df[cname_col].dropna().unique()
+            community_values.update(col_vals)
+            if is_numeric_dtype(df[cname_col]):
                 numeric_flag = True
             else:
                 non_numeric_flag = True
@@ -363,18 +369,62 @@ def retrieve_seed_types(file_path:str, log_path_ctd:str, clusters:list[list[tupl
                 semantic_types['numeric'].add(t)
             if non_numeric_flag:
                 semantic_types['non_numeric'].add(t)
-        
-        for column in community:
-            fname, cname = column
-            if fname in annotations_stage_1:
-                annotations_stage_1[fname][cname] = answer
-            else:
-                annotations_stage_1[fname] = {cname: answer}
-        for value in community_values:
-            if value in inverted_index:
-                inverted_index[value].update(answer)
-            else:
-                inverted_index[value] = set(answer)
+
+
+        if ccta_refinement and len(answer) > 1:
+             for column in community:
+                fname, cname = column
+                df = df_cache[fname] if fname in df_cache else pd.read_csv(os.path.join(file_path, fname), na_values=NAN_VALUES)
+                unique_vals = pd.Series(df[cname].dropna().astype(str).unique())
+                lengths = unique_vals.str.len()
+                num_like = unique_vals.str.match(r'^\s*-?\d+(\.\d+)?\s*$').mean()
+                sorted_ulens = np.sort(lengths.unique())
+                iqr = np.percentile(lengths, 75) - np.percentile(lengths, 25)
+                has_length_gap = len(sorted_ulens) > 1 and np.any(np.diff(sorted_ulens) > max(iqr, 1))
+                column_is_homogeneous = not has_length_gap and (num_like < 0.1 or num_like > 0.9)
+                if not column_is_homogeneous:
+                    continue
+                response_ccta, _, _ = closed_cta_single(os.path.join(file_path, fname), log_path=logpath_ccta_refinement, api=api_ccta_refinement, model=model_ccta_refinement,
+                                                        num_samples=num_samples, num_rows=num_rows, column=cname, semantic_types=communities_types[community_index],
+                                                        sampling=sampling, inverted_index=inverted_index, temperature=temperature)
+                
+                if not response_ccta:
+                     response_types = []
+                else:
+                    response_types = list(response_ccta.values())
+                    if isinstance(response_types[0], list):
+                        if response_types[0] == ['None']:
+                            response_types = []
+                        else:
+                            response_types = response_types[0]
+                    elif response_types[0] == 'None':
+                        response_types = []
+                    elif not response_types[0]:
+                        response_types = []
+
+                if response_types: # if the model was able to assign a type
+                    df = df_cache[fname] if fname in df_cache else pd.read_csv(os.path.join(file_path, fname), na_values=NAN_VALUES)
+                    for value in df[cname].dropna().unique():
+                        if value in inverted_index:
+                            inverted_index[value].update(response_types)
+                        else:
+                            inverted_index[value] = set(response_types)
+                    if fname in annotations_stage_1:
+                        annotations_stage_1[fname][cname] = response_types
+                    else:
+                        annotations_stage_1[fname] = {cname: response_types}
+        else:
+            for column in community:
+                fname, cname = column
+                if fname in annotations_stage_1:
+                    annotations_stage_1[fname][cname] = answer
+                else:
+                    annotations_stage_1[fname] = {cname: answer}
+            for value in community_values:
+                if value in inverted_index:
+                    inverted_index[value].update(answer)
+                else:
+                    inverted_index[value] = set(answer)
 
     return semantic_types, inverted_index, communities_types, annotations_stage_1, total_input_seed, total_output_seed
 

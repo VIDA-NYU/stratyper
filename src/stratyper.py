@@ -5,20 +5,21 @@ import yaml
 from constants import NAN_VALUES
 from llm_inference import retrieve_seed_types, cluster_type_annotation, closed_cta_single, judge_column_type
 from compute_features import compute_column_name_embeddings, compute_column_value_embeddings
-from utils import get_embeddings_index, suppress_output
+from utils import get_embeddings_index, suppress_output, normalize_string
 from sentence_transformers import  SentenceTransformer, util
 from sklearn.preprocessing import normalize
 import pickle
 import json
 from tqdm import tqdm
 from pandas.api.types import is_numeric_dtype
+import numpy as np
 
 class Stratyper:
 
     def __init__(self, dataset_path: str, respath: str, metadata_path: str, other_annotations_paths: dict[str, str], thresholds: dict[str, list[float]], 
                  number_of_samples_ctd: int, number_of_samples_ccta: int,number_of_rows_ccta: int, number_of_rows_judge:int,
                  min_cluster_size: int, sampling_type: str, providers: dict[str, str], models: dict[str, str], 
-                 temperatures: dict[str, float], context:str):
+                 temperatures: dict[str, float], context:str, ccta_refinement: bool = False):
         self.dataset_path= dataset_path
         self.respath = respath
         self.metadata_path = metadata_path
@@ -42,6 +43,7 @@ class Stratyper:
         self.clusters_combined = dict()
         self.input_tokens_ccta = 0
         self.output_tokens_ccta = 0
+        self.ccta_refinement = ccta_refinement
 
         if not os.path.exists(self.respath):
             os.makedirs(self.respath)
@@ -60,7 +62,7 @@ class Stratyper:
                     else:
                         self._is_num[fname][col] = False
 
-    def compute_clusters(self, embedding_path: str, store_files: bool = True, print_progress: bool = True, recompute: bool = False):
+    def compute_clusters(self, embedding_path: str, print_progress: bool = True, recompute: bool = False):
 
         def communities_columns(communities:list[list[int]], index_file_column: dict[int, tuple[str, str]]) -> list[list[tuple[str, str]]]:
             communities_columns = [list() for i in range(len(communities))]
@@ -73,26 +75,26 @@ class Stratyper:
                     communities_columns[index].append(to_append)   
             return communities_columns
 
-        if os.path.exists(os.path.join(embedding_path, f'column_name_embeddings_{self.models["embedding_model"]}.pickle')) and not recompute:
-            with open(os.path.join(embedding_path, f'column_name_embeddings_{self.models["embedding_model"]}.pickle'), 'rb') as file:
+        if embedding_path and os.path.exists(os.path.join(embedding_path, f'column_name_embeddings_{self.models["embedding_model"]}.pickle'.replace('/', '_'))) and not recompute:
+            with open(os.path.join(embedding_path, f'column_name_embeddings_{self.models["embedding_model"]}.pickle'.replace('/', '_')), 'rb') as file:
                 column_name_embeddings = pickle.load(file)
         else:
             column_name_embeddings = compute_column_name_embeddings(self.dataset_path, model_name=self.models['embedding_model'])
-            if store_files:
-                with open(os.path.join(embedding_path, f'column_name_embeddings_{self.models["embedding_model"]}.pickle'), 'wb') as file:
+            if embedding_path:
+                with open(os.path.join(embedding_path, f'column_name_embeddings_{self.models["embedding_model"]}.pickle'.replace('/', '_')), 'wb') as file:
                     pickle.dump(column_name_embeddings, file)
 
-        if os.path.exists(os.path.join(embedding_path, f'column_value_embeddings_{self.models["embedding_model"]}.pickle')) and not recompute:
-            with open(os.path.join(embedding_path, f'column_value_embeddings_{self.models["embedding_model"]}.pickle'), 'rb') as file:
+        if embedding_path and os.path.exists(os.path.join(embedding_path, f'column_value_embeddings_{self.models["embedding_model"]}.pickle'.replace('/', '_'))) and not recompute:
+            with open(os.path.join(embedding_path, f'column_value_embeddings_{self.models["embedding_model"]}.pickle'.replace('/', '_')), 'rb') as file:
                 column_value_embeddings = pickle.load(file)
-            with open(os.path.join(embedding_path, f'column_num_value_embeddings_{self.models["embedding_model"]}.pickle'), 'rb') as file:
+            with open(os.path.join(embedding_path, f'column_num_value_embeddings_{self.models["embedding_model"]}.pickle'.replace('/', '_')), 'rb') as file:
                 column_num_value_embeddings = pickle.load(file)
         else:
             column_value_embeddings, column_num_value_embeddings = compute_column_value_embeddings(self.dataset_path, model_name=self.models['embedding_model'])
-            if store_files:
-                with open(os.path.join(embedding_path, f'column_value_embeddings_{self.models["embedding_model"]}.pickle'), 'wb') as file:
+            if embedding_path:
+                with open(os.path.join(embedding_path, f'column_value_embeddings_{self.models["embedding_model"]}.pickle'.replace('/', '_')), 'wb') as file:
                     pickle.dump(column_value_embeddings, file)
-                with open(os.path.join(embedding_path, f'column_num_value_embeddings_{self.models["embedding_model"]}.pickle'), 'wb') as file:
+                with open(os.path.join(embedding_path, f'column_num_value_embeddings_{self.models["embedding_model"]}.pickle'.replace('/', '_')), 'wb') as file:
                     pickle.dump(column_num_value_embeddings, file)
 
         name_embeddings, index_file_column = get_embeddings_index(column_name_embeddings)
@@ -193,12 +195,23 @@ class Stratyper:
             self.communities_types = communities_types
             return
 
+        if self.ccta_refinement:
+            api_ccta_refinement = self.providers['ccta']
+            model_ccta_refinement = self.models['ccta']
+            logpath_ccta_refinement = os.path.join(self.respath, 'logs_stage_1_refinement_ccta.jsonl')
+        else:
+            api_ccta_refinement = None
+            model_ccta_refinement = None
+            logpath_ccta_refinement = None  
+
         if len(self.clusters_combined) == 1: # If only one combination of thresholds has been used
             semantic_types, inverted_index, communities_types, annotations_stage_1, total_input_tokens, total_output_tokens =\
                 retrieve_seed_types(file_path=self.dataset_path, log_path_ctd=os.path.join(self.respath, 'logs_ctd.jsonl'), 
                                     clusters=self.clusters_combined[(self.thresholds['name_clusters'][0], self.thresholds['value_clusters'][0])],
                                     api_ctd=self.providers['ctd'], model_ctd=self.models['ctd'], sampling=self.sampling_type, 
-                                    num_samples=self.number_of_samples_ctd, temperature=self.temperatures['ctd'], context=self.context)
+                                    num_samples=self.number_of_samples_ctd, temperature=self.temperatures['ctd'], context=self.context, 
+                                    num_rows=self.number_of_rows_ccta, ccta_refinement=self.ccta_refinement, logpath_ccta_refinement=logpath_ccta_refinement, 
+                                    api_ccta_refinement=api_ccta_refinement, model_ccta_refinement=model_ccta_refinement)
         else:
 
             
@@ -211,7 +224,9 @@ class Stratyper:
             retrieve_seed_types(file_path=self.dataset_path, log_path_ctd=os.path.join(self.respath, 'logs_ctd.jsonl'), 
                                 clusters=self.clusters_combined[(name_threshold, value_threshold)],
                                 api_ctd=self.providers['ctd'], model_ctd=self.models['ctd'], sampling=self.sampling_type,
-                                num_samples=self.number_of_samples_ctd, temperature=self.temperatures['ctd'], context=self.context)
+                                num_samples=self.number_of_samples_ctd, temperature=self.temperatures['ctd'], context=self.context, 
+                                num_rows=self.number_of_rows_ccta, ccta_refinement=self.ccta_refinement, logpath_ccta_refinement=logpath_ccta_refinement, 
+                                api_ccta_refinement=api_ccta_refinement, model_ccta_refinement=model_ccta_refinement)
 
 
             for name_threshold, value_threshold in zip(self.thresholds['name_clusters'][1:], self.thresholds['value_clusters'][1:]):
@@ -350,18 +365,60 @@ class Stratyper:
                         if non_numeric_flag:
                             semantic_types['non_numeric'].add(t)
 
-                    for fname, cname in cluster:
-                        if fname in annotations_stage_1:
-                            annotations_stage_1[fname][cname] = answer
-                        else:
-                            annotations_stage_1[fname] = {cname: answer}
+                    if self.ccta_refinement and len(answer) > 1: # CCTA step only if multiple types are assigned to the community
+                        for fname, cname in cluster:
+                            unique_vals = pd.Series(self.dataframes[fname][cname].dropna().astype(str).unique())
+                            lengths = unique_vals.str.len()
+                            num_like = unique_vals.str.match(r'^\s*-?\d+(\.\d+)?\s*$').mean()
+                            sorted_ulens = np.sort(lengths.unique())
+                            iqr = np.percentile(lengths, 75) - np.percentile(lengths, 25)
+                            has_length_gap = len(sorted_ulens) > 1 and np.any(np.diff(sorted_ulens) > max(iqr, 1))
+                            column_is_homogeneous = not has_length_gap and (num_like < 0.1 or num_like > 0.9)
+                            if not column_is_homogeneous:
+                                continue
+                            response_ccta, _, _ = closed_cta_single(os.path.join(self.dataset_path,fname), log_path=logpath_ccta_refinement, api=api_ccta_refinement, model=model_ccta_refinement,
+                                                                    num_samples=self.number_of_samples_ccta, num_rows=self.number_of_rows_ccta, column=cname, semantic_types=answer,
+                                                                    sampling=self.sampling_type, inverted_index=inverted_index, temperature=self.temperatures['ccta'])
+                            
+                            if not response_ccta:
+                                response_types = []
+                            else:
+                                response_types = list(response_ccta.values())
+                                if isinstance(response_types[0], list):
+                                    if response_types[0] == ['None']:
+                                        response_types = []
+                                    else:
+                                        response_types = response_types[0]
+                                elif response_types[0] == 'None':
+                                    response_types = []
+                                elif not response_types[0]:
+                                    response_types = []
 
-                
-                    for value in community_values:
-                        if value in inverted_index:
-                            inverted_index[value].update(answer)
-                        else:
-                            inverted_index[value] = set(answer)
+                            if response_types: # if the model was able to assign a type
+                                df = self.dataframes[fname]
+
+                                for value in df[cname].dropna().unique():
+                                    if value in inverted_index:
+                                        inverted_index[value].update(response_types)
+                                    else:
+                                        inverted_index[value] = set(response_types)
+                                if fname in annotations_stage_1:
+                                    annotations_stage_1[fname][cname] = response_types
+                                else:
+                                    annotations_stage_1[fname] = {cname: response_types}
+                    else:                
+                        for fname, cname in cluster:
+                            if fname in annotations_stage_1:
+                                annotations_stage_1[fname][cname] = answer
+                            else:
+                                annotations_stage_1[fname] = {cname: answer}
+
+                    
+                        for value in community_values:
+                            if value in inverted_index:
+                                inverted_index[value].update(answer)
+                            else:
+                                inverted_index[value] = set(answer)
     
 
         
@@ -726,7 +783,14 @@ class Stratyper:
                         else:
                             method_types[method_name] = []
 
-                types_to_use = list(set().union(*method_types.values()))
+                # Collect all original types and build normalized→original mapping
+                all_original_types = [t for v in method_types.values() for t in v]
+                norm_to_original = {}
+                for t in all_original_types:
+                    nt = normalize_string(t)
+                    if nt not in norm_to_original:
+                        norm_to_original[nt] = t  # keep the first original form
+                types_to_use = list(norm_to_original.keys())
 
                 if col in self.eval_dict[fname]:
                     eval_response = self.eval_dict[fname][col]
@@ -734,14 +798,21 @@ class Stratyper:
                     eval_response = None
                     while not eval_response:
                         with suppress_output():
-                        
-                            eval_response, _, _ = judge_column_type(os.path.join(self.dataset_path, fname), log_path=os.path.join(self.respath, 'logs_judge.jsonl'), 
-                                                            column=col, api=self.providers['judge'], model=self.models['judge'], 
-                                                            col_description=col_description, semantic_types=types_to_use, 
+
+                            eval_response, _, _ = judge_column_type(os.path.join(self.dataset_path, fname), log_path=os.path.join(self.respath, 'logs_judge.jsonl'),
+                                                            column=col, api=self.providers['judge'], model=self.models['judge'],
+                                                            col_description=col_description, semantic_types=types_to_use,
                                                             num_samples=self.number_of_samples_ctd, inverted_index=self.inverted_index,
                                                             temperature=self.temperatures['judge'], explanation=False)
 
-                    
+                    # Map judge response keys (normalized) back to original type names
+                    if eval_response and isinstance(eval_response, dict) and 'judgment' in eval_response:
+                        remapped_judgment = {}
+                        for norm_type, judgment in eval_response['judgment'].items():
+                            orig = norm_to_original.get(norm_type, norm_type)
+                            remapped_judgment[orig] = judgment
+                        eval_response['judgment'] = remapped_judgment
+
                     if col in self.eval_dict[fname]:
                         for col_type in eval_response['judgment']:
                             self.eval_dict[fname][col]['judgment'][col_type] = eval_response['judgment'][col_type]
@@ -768,10 +839,14 @@ class Stratyper:
                     sum_correct_col = dict()
                     for method in method_types:
                         sum_correct_col[method] = 0
-                    for annotation, judgment in self.eval_dict[fname][col]['judgment'].items():
-                        if judgment == 'correct':
-                            for method_name, annotations in method_types.items():
-                                if annotation in annotations:
+                    for method_name, annotations in method_types.items():
+                        norm_method_types = {normalize_string(a) for a in annotations}
+                        already_counted = set()
+                        for annotation, judgment in self.eval_dict[fname][col]['judgment'].items():
+                            if judgment == 'correct':
+                                na = normalize_string(annotation)
+                                if na in norm_method_types and na not in already_counted:
+                                    already_counted.add(na)
                                     sum_correct_col[method_name] += 1
                                     if self._is_num[fname][col]:
                                         sum_correct_num[method_name] += 1
@@ -876,7 +951,7 @@ if __name__ == "__main__":
                           thresholds={'name_clusters': config['name_clusters'], 'value_clusters': config['value_clusters']}, number_of_samples_ctd=config['number_of_samples_ctd'],
                           number_of_samples_ccta=config['number_of_samples_ccta'], number_of_rows_ccta=config['number_of_rows_ccta'], 
                           number_of_rows_judge=config['number_of_samples_judge'], min_cluster_size=config['min_cluster_size'], 
-                          sampling_type=config['sampling_type'], context=config['context'])
+                          sampling_type=config['sampling_type'], context=config['context'], ccta_refinement=config.get('ccta_refinement', False))
     
     if args.print_progress:
         print('Computing Metadata, Content and Seed Clusters...')

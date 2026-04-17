@@ -8,6 +8,7 @@ openai>=1.71.0,<2
 sentence-transformers>=4.0.2,<5
 fastembed>=0.6.1,<0.7
 hnswlib>=0.8.0,<0.9
+torch
 
 # Data processing and analysis
 pandas>=2.2.3,<3
@@ -18,6 +19,9 @@ scipy
 # NLP and text processing
 nltk>=3.9.1,<4
 tiktoken>=0.9.0,<0.10
+
+# JSON parsing/repair for LLM responses
+json-repair
 
 # Network and graph algorithms
 networkx>=3.4.2,<4

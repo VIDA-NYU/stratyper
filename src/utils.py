@@ -1,11 +1,11 @@
 import json
-import ast
 import os
 import re
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sentence_transformers import SentenceTransformer
+from json_repair import repair_json
 from sklearn.cluster import KMeans
 import numpy as np
 from scipy.spatial.distance import cdist
@@ -18,8 +18,15 @@ import contextlib
 from openai import OpenAI
 from portkey_ai import Portkey
 from dotenv import load_dotenv
-from constants import NAN_VALUES
+import unicodedata
 
+def normalize_string(s: str) -> str:
+    s = unicodedata.normalize('NFKC', s)
+    s = s.lower()
+    s = re.sub(r'[^\w\s]', '', s)
+    s = s.replace('_', ' ')
+    s = ' '.join(s.split())
+    return s
 
 def df_to_text(df:pd.DataFrame, column_names:bool=True, num_rows:int=5)->str:
 
@@ -41,62 +48,119 @@ def df_to_text(df:pd.DataFrame, column_names:bool=True, num_rows:int=5)->str:
 
 def extract_dict_from_response(response_text: str) -> dict | None:
     """
-    Extract a dictionary from LLM response text, handling various formats,
-    including malformed and unquoted key-value pairs.
-    
-    Parameters:
-    response_text (str): The raw response from the LLM.
-        
-    Returns:
-    dict: The extracted dictionary, or None if no valid dict can be parsed.
+    Extract a dictionary from any JSON-formatted LLM response. Handles:
+      - Plain JSON, Python-dict syntax (single quotes), unquoted keys, trailing commas
+      - Markdown code fences (```json, ```python, or unspecified)
+      - JSON embedded inside surrounding prose
+      - Truncated / malformed JSON (via json_repair)
+      - Top-level lists: merged if non-conflicting single-key dicts, or
+        pivoted from [{"column": X, "types": Y}, ...] shape
     """
-  
-    code_block_pattern = r'```(?:json)?\s*(.*?)\s*```'
-    matches = re.findall(code_block_pattern, response_text, re.DOTALL)
-    
+    if not response_text or not isinstance(response_text, str):
+        return None
 
-    if not matches:
-        matches = [response_text]
+    # Candidate payloads in order of decreasing confidence
+    candidates: list[str] = []
 
-    for match in matches:
-   
-        cleaned_match = match.strip().replace('{%', '{').replace('%}', '}')
+    # 1. Markdown code fences (most reliable signal)
+    code_block_pattern = r'```(?:json|python)?\s*(.*?)\s*```'
+    candidates.extend(re.findall(code_block_pattern, response_text, re.DOTALL))
 
+    # 2. Top-level balanced {...} or [...] spans in the raw text
+    candidates.extend(_find_balanced_spans(response_text))
 
+    # 3. Whole response as a last resort
+    candidates.append(response_text)
+
+    for cand in candidates:
+        cleaned = cand.strip().replace('{%', '{').replace('%}', '}')
+        if not cleaned:
+            continue
         try:
-            data = json.loads(cleaned_match)
-            if isinstance(data, dict):
-                return data
-        except json.JSONDecodeError:
-            pass
+            result = repair_json(cleaned, return_objects=True)
+        except Exception:
+            continue
+        normalized = _normalize_parsed_result(result)
+        if normalized:
+            return normalized
 
-      
-        try:
-            data = ast.literal_eval(cleaned_match)
-            if isinstance(data, dict):
-                return data
-            
-            # Handle the specific case of a set with a single string "key: value"
-            if isinstance(data, set) and len(data) == 1:
-                element = list(data)[0]
-                if isinstance(element, str) and ':' in element:
-                    key, value = element.split(':', 1)
-                    return {key.strip(): value.strip()}
+    return None
 
-        except (ValueError, SyntaxError):
-            # This handles cases that are not valid Python literals,
-            # e.g., {key without quotes: value without quotes}
-            if cleaned_match.startswith('{') and cleaned_match.endswith('}') and ':' in cleaned_match:
-                 try:
-                     # Remove braces and split by the first colon
-                     content = cleaned_match[1:-1]
-                     key, value = content.split(':', 1)
-                     # Return the dictionary with stripped keys/values
-                     return {key.strip(): value.strip()}
-                 except ValueError:
-                     # This can happen if there are multiple colons in an unexpected way
-                     pass
-            
+def _find_balanced_spans(text: str) -> list[str]:
+    """Return every top-level balanced {...} or [...] span in text, quote-aware."""
+    spans = []
+    n = len(text)
+    i = 0
+    while i < n:
+        if text[i] in '{[':
+            open_char = text[i]
+            close_char = '}' if open_char == '{' else ']'
+            depth = 0
+            in_str = False
+            esc = False
+            j = i
+            while j < n:
+                c = text[j]
+                if in_str:
+                    if esc:
+                        esc = False
+                    elif c == '\\':
+                        esc = True
+                    elif c == '"':
+                        in_str = False
+                else:
+                    if c == '"':
+                        in_str = True
+                    elif c == open_char:
+                        depth += 1
+                    elif c == close_char:
+                        depth -= 1
+                        if depth == 0:
+                            spans.append(text[i:j + 1])
+                            break
+                j += 1
+            i = j + 1
+        else:
+            i += 1
+    return spans
+
+def _normalize_parsed_result(result) -> dict | None:
+    """Coerce parsed JSON into a non-empty dict if possible."""
+    if isinstance(result, dict):
+        return result if result else None
+
+    if not (isinstance(result, list) and result):
+        return None
+
+    # Pivot shape: [{"column": X, "types": Y}, ...]
+    col_key_names = {'column', 'column_name', 'col', 'name'}
+    type_key_names = {'type', 'types', 'semantic_type', 'semantic_types',
+                      'annotation', 'annotations'}
+    pivoted: dict = {}
+    pivotable = True
+    for item in result:
+        if not isinstance(item, dict):
+            pivotable = False
+            break
+        lowered = {k.lower(): k for k in item.keys()}
+        ck = next((lowered[k] for k in col_key_names if k in lowered), None)
+        tk = next((lowered[k] for k in type_key_names if k in lowered), None)
+        if ck is None or tk is None:
+            pivotable = False
+            break
+        pivoted[str(item[ck])] = item[tk]
+    if pivotable and pivoted:
+        return pivoted
+
+    # Merge shape: [{"colA": [...]}, {"colB": [...]}] with no key conflicts
+    if all(isinstance(x, dict) for x in result):
+        merged: dict = {}
+        for item in result:
+            if any(k in merged for k in item):
+                return None  # conflict → can't safely merge
+            merged.update(item)
+        return merged or None
+
     return None
 
 def remove_nan_columns(df:pd.DataFrame) -> pd.DataFrame:
@@ -131,10 +195,12 @@ def identify_numeric_string_columns(df:pd.DataFrame) -> list[str]:
                 pass
     return numeric_string_cols
 
-def standardize_column(series:pd.Series):
+def standardize_column(series:pd.Series) -> np.ndarray:
     """Standardize a numeric column to have mean 0 and variance 1."""
-    scaler = StandardScaler()
-    return scaler.fit_transform(series.values.reshape(-1, 1)).flatten()
+    mean, std = series.mean(), series.std(ddof=0)
+    if not np.isfinite(std) or std == 0:
+        return np.zeros(len(series))
+    return ((series - mean) / std).to_numpy()
 
 def combine_embeddings(column_name_embeddings:dict[str, dict[str, np.ndarray]], column_value_embeddings:dict[str, dict[str, np.ndarray]], split:bool=False) \
     -> dict[str, dict[str, np.ndarray]] | tuple[dict[str, dict[str, np.ndarray]], dict[str, dict[str, np.ndarray]]]:
@@ -440,7 +506,6 @@ def log_llm_call(logpath:str, prompt:str, response:str, model:str, **kwargs) -> 
 
     with open(logpath, "a", encoding="utf-8") as f:
         f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
-
 
 
 def get_client(provider: str) -> OpenAI | Portkey:

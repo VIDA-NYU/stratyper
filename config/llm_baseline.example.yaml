@@ -4,8 +4,8 @@
 # REQUIRED: Path to the directory containing input files
 dataset_path: null
 
-# Path for logging (optional). Leave as null to disable.
-log_path: null
+# Fileath for logging (optional). Leave as null to disable.
+log_filepath: null
 
 
 # ==========================================

@@ -10,7 +10,14 @@ import nltk
 import math
 from scipy.stats import kurtosis, skew
 from constants import NAN_VALUES
+import torch
 
+def _get_device() -> str:
+    if torch.backends.mps.is_available():
+        return "mps"
+    if torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
 
 def extract_bag_of_characters_features(data)-> OrderedDict[str, float]:
     characters_to_check = (
@@ -116,6 +123,13 @@ def histogram_features(series:pd.Series, bins:int=100) -> np.ndarray:
     hist, _ = np.histogram(series, bins=bins, density=True)
     return hist
 
+def magnitude_features(values: np.ndarray) -> np.ndarray:
+    pcts = np.percentile(values, [5, 25, 50, 75, 95])
+    signed_log_pcts = np.sign(pcts) * np.log1p(np.abs(pcts))
+    has_negatives = 1.0 if pcts[0] < 0 else 0.0
+    int_frac = float(np.mean(values == np.round(values)))
+    return np.concatenate([signed_log_pcts, [has_negatives, int_frac]])
+
 
 def statistical_features(series:pd.Series) -> np.ndarray:
     return np.array([
@@ -171,64 +185,87 @@ def compute_column_statistics(datapath:str) -> dict[str, dict[str, np.ndarray]]:
     return column_statistics
 
 
-def compute_column_name_embeddings(datapath:str, model_name:str='paraphrase-mpnet-base-v2') -> dict[str, dict[str, np.ndarray]]:
+def compute_column_name_embeddings(datapath:str, model_name:str='all-MiniLM-L6-v2') -> dict[str, dict[str, np.ndarray]]:
 
     column_name_embeddings = dict()
+    device = _get_device()
     if model_name == 'dunzhang/stella_en_400M_v5':
-        model = SentenceTransformer(model_name, trust_remote_code=True)
+        model = SentenceTransformer(model_name, trust_remote_code=True, device=device)
     else:
-        model = SentenceTransformer(model_name)
+        model = SentenceTransformer(model_name, device=device)
 
-    for filename in tqdm(os.listdir(datapath)):
-        column_name_embeddings[filename] = dict()
+    # Collect all (filename, col) pairs in one pass — avoids per-column encode overhead
+    pairs = []
+    for filename in tqdm(os.listdir(datapath), desc="Reading column names"):
         file_path = os.path.join(datapath, filename)
         df = pd.read_csv(file_path, na_values=NAN_VALUES)
-
+        column_name_embeddings[filename] = dict()
         for col in df.columns:
-            column_name_emb = model.encode(col)
-            column_name_embeddings[filename][col] = column_name_emb
+            pairs.append((filename, col))
+
+    # Single batched encode for all column names
+    all_embs = model.encode([col for _, col in pairs], batch_size=512, show_progress_bar=True)
+
+    for (filename, col), emb in zip(pairs, all_embs):
+        column_name_embeddings[filename][col] = emb
 
     return column_name_embeddings
 
 
-def compute_column_value_embeddings(datapath:str, model_name:str='paraphrase-mpnet-base-v2', hist_bins:int=100) -> tuple[dict[str, dict[str, np.ndarray]], dict[str, dict[str, np.ndarray]]]:
+def compute_column_value_embeddings(datapath:str, model_name:str='all-MiniLM-L6-v2', hist_bins:int=20) -> tuple[dict[str, dict[str, np.ndarray]], dict[str, dict[str, np.ndarray]]]:
 
     column_value_embeddings = dict()
     column_num_value_embeddings = dict()
+    device = _get_device()
     if model_name == 'dunzhang/stella_en_400M_v5':
-        model = SentenceTransformer(model_name, trust_remote_code=True)
+        model = SentenceTransformer(model_name, trust_remote_code=True, device=device)
     else:
-        model = SentenceTransformer(model_name)
+        model = SentenceTransformer(model_name, device=device)
 
-    for filename in tqdm(os.listdir(datapath)):
-        column_num_value_embeddings[filename] = dict()
+    # Process one file at a time — bounded memory, no global DataFrame cache
+    for filename in tqdm(os.listdir(datapath), desc="Computing embeddings"):
         file_path = os.path.join(datapath, filename)
         df = pd.read_csv(file_path, na_values=NAN_VALUES)
 
         df_non_numeric = df.select_dtypes(exclude=['number'])
+        df_numeric = df.select_dtypes(include=['number'])
+
+        column_num_value_embeddings[filename] = dict()
+
         if not df_non_numeric.empty:
             column_value_embeddings[filename] = dict()
 
-        df_numeric = df.select_dtypes(include=['number'])
+            # Collect unique values per column (capped), encode the whole file in one batch
+            col_vals_map = {}
+            file_unique = set()
+            for col in df_non_numeric.columns:
+                vals = df_non_numeric[col].dropna().astype(str).unique()#[:max_vals_per_col]
+                col_vals_map[col] = vals
+                file_unique.update(vals)
 
-        if not df_numeric.empty:
-            column_num_value_embeddings[filename] = dict()
+            unique_list = list(file_unique)
+            embs = model.encode(unique_list, batch_size=256, show_progress_bar=False)
+            val_to_idx = {v: i for i, v in enumerate(unique_list)}
 
-        for col in df_non_numeric.columns:
-            values = list(set(df_non_numeric[col].dropna().astype(str)))
-            values_embs = model.encode(values)
-            column_value_embeddings[filename][col] = np.mean(values_embs, axis=0)
+            for col, vals in col_vals_map.items():
+                idxs = [val_to_idx[v] for v in vals if v in val_to_idx]
+                if idxs:
+                    column_value_embeddings[filename][col] = embs[idxs].mean(axis=0)
+
+            # Release the embedding matrix and drain the MPS allocator cache
+            del embs, unique_list, val_to_idx
+            if device == "mps":
+                torch.mps.empty_cache()
 
         for col in df_numeric.columns:
-            values = df_numeric[col].dropna()
-            try:
-                st_values = standardize_column(values)
-            except Exception as e:
-                print(filename, col)
-                print(e)
-                raise Exception("Error")
+            values = df_numeric[col].replace([np.inf, -np.inf], np.nan).dropna()
+            if values.empty:
+                # Column had no finite values — emit a zero vector so shapes stay consistent
+                column_num_value_embeddings[filename][col] = np.zeros(hist_bins + 7)
+                continue
+            st_values = standardize_column(values)
             feats_hist = histogram_features(st_values, bins=hist_bins)
-            column_num_value_embeddings[filename][col] =  feats_hist
-                    
+            feats_mag = magnitude_features(values.to_numpy())
+            column_num_value_embeddings[filename][col] = np.concatenate([feats_hist, feats_mag])
 
     return column_value_embeddings, column_num_value_embeddings
