@@ -145,4 +145,4 @@ python src/stratyper.py --config config/stratyper.yaml [OPTIONAL --print --evalu
 
 ## Datasets
 
-Datasets and corresponding metadata can be found in [Google Drive](https://drive.google.com/file/d/1zQMKkAe9MS4rcYx-_0kLNOIlDPiD7YCT/view?usp=drive_link). Simply download them and specify necessary paths in the `.yaml` configurations.
+Datasets and corresponding metadata can be found in [Google Drive](https://drive.google.com/file/d/13h4nXcYq6o_eccmxBJryPvF0qqA3ECAH/view?usp=sharing). Simply download them and specify necessary paths in the `.yaml` configurations.
