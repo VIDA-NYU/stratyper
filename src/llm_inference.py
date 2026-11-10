@@ -123,7 +123,7 @@ def llm_cta_directory(dataset_path:str, log_filepath:str=None, api:str='ollama',
 
     return results
 
-def closed_cta_single(file_path:str, log_path:str=None, api:str='ollama_nyu', model:str="phi4:latest", column:str=None, semantic_types:list[str]=None, 
+def closed_cta_single(file_path:str, log_path:str=None, api:str='ollama', model:str="phi4:latest", column:str=None, semantic_types:list[str]=None, 
                       sampling:str='length', inverted_index:dict[str, set[str]]=None, num_rows:int=3, 
                       num_samples:int=5, temperature:float=0.3, refine_output:bool=True) -> tuple[dict[str, str], int, int]:
 
