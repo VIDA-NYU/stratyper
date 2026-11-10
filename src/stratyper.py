@@ -685,7 +685,7 @@ class Stratyper:
             self.columns_descriptions = columns_descriptions
             return
         for filename in os.listdir(self.metadata_path):
-            filedir = filename[:-4]
+            filedir = filename[:-5]
             columns_descriptions[f'{filedir}.csv'] = dict()
             with open(os.path.join(self.metadata_path, filename), 'r') as file:
                 cds = json.load(file)
