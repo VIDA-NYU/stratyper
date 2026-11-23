@@ -1,0 +1,36 @@
+# Edit absolute paths before running. Run from a directory containing ./model.
+dataset_path: /absolute/path/to/experiment/NYC-CG/tables
+results_path: /absolute/path/to/experiment/NYC-CG/stratyper
+embedding_path: /absolute/path/to/experiment/NYC-CG/embeddings
+metadata_path: /absolute/path/to/experiment/NYC-CG/metadata
+other_annotations_paths:
+  StraTyper_LLM: /absolute/path/to/experiment/NYC-CG/baseline/cta_stratyper_openai_gpt-4.1-2025-04-14_full_multiple_types_rows_10_temperature_0.3.pickle
+name_clusters:
+- 0.99
+- 0.9
+- 0.75
+value_clusters:
+- 0.99
+- 0.9
+- 0.75
+min_cluster_size: 2
+providers:
+  ctd: openai
+  ccta: openai
+  judge: openai
+models:
+  ctd: gpt-4.1-2025-04-14
+  ccta: gpt-4.1-mini-2025-04-14
+  judge: gpt-4.1-mini-2025-04-14
+  embedding_model: ./model
+temperatures:
+  ctd: 0.3
+  ccta: 0.0
+  judge: 0.0
+sampling_type: length
+context: most_frequent_5
+number_of_rows_ccta: 3
+number_of_samples_ctd: 10
+number_of_samples_ccta: 10
+number_of_samples_judge: 10
+ccta_refinement: false

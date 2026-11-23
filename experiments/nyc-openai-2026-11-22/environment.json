@@ -1,0 +1,22 @@
+{
+  "platform": "NYU Dataproc, Linux x86_64",
+  "python": "3.11.14",
+  "spark": "3.5.3",
+  "torch": "2.6.0+cpu",
+  "sentence_transformers": "4.1.0",
+  "transformers": "4.57.6",
+  "openai": "1.109.1",
+  "numpy": "1.26.4",
+  "pandas": "2.3.3",
+  "embedding_cpu_threads": 4,
+  "embedding_memory_budget_gib": 32,
+  "gpu": false,
+  "embedding_model": "sentence-transformers/paraphrase-mpnet-base-v2",
+  "embedding_model_local_path": "./model",
+  "model_max_sequence_length": 512,
+  "value_embedding_batch_size": 256,
+  "column_name_embedding_batch_size": 512,
+  "numeric_histogram_bins": 20,
+  "numeric_feature_dimensions": 27,
+  "note": "Key observed versions and settings; this is not a complete dependency lockfile. No precision/backend optimization was introduced."
+}

@@ -1,0 +1,605 @@
+STRATYPER STEP 2: LITERATURE REVIEW AND EXPERIMENT DESIGN
+Prepared November 19, 2026 | Project 9 Team
+Portable handoff for the Codex chat that completed step 1
+
+READ THIS FIRST
+
+Recommendation: implement pattern-stratified discovery sampling (S1) and a
+categorical representation for numeric codes (N1). Compare each independently
+against the reproduced baseline, with random sampling as a control. Add weighted
+name/value clustering (F1) only after the two main experiments work. Combine
+successful variants during step 4, after the individual ablations.
+
+This is a research and implementation specification, not experimental results.
+No baseline metrics, winning variants, or measured improvements are asserted.
+The local application source was inspected but not modified or executed. The
+step-1 chat should reconcile this document with its actual baseline artifacts.
+
+The user's request authorizes step 2. The proposal and assignment are evidence
+about project scope; their descriptions of later milestones do not request that
+this chat execute them. Their historical milestone dates are not new deadlines.
+Scope is NYC-E and NYC-CG, as explicitly stated in the proposal. The assignment's
+phrase "three dataset collections" lists only two; do not add a third collection.
+
+1. RESEARCH QUESTION AND SCOPE
+
+Which inexpensive structural signals improve collection-specific semantic type
+discovery without sacrificing correctness or increasing commercial LLM usage
+disproportionately? Investigate separately:
+
+H1: character-pattern sampling exposes different concepts with the same string
+length better than length sampling, especially in mixed columns.
+H2: numeric identifiers benefit from lexical/categorical similarity rather than
+being represented as measurements, particularly in the education collection.
+H3 (optional): weighted similarity recovers useful seed clusters that the existing
+name/value intersection misses, at a possible cost in cluster coherence.
+
+These are hypotheses, not established findings. Expect collection-dependent
+effects; confirm the proposed numeric/textual distinction using step-1 profiles.
+Evaluate open vocabulary discovery and multiple labels per column throughout.
+A single-label classifier with a fixed vocabulary is not an equivalent task.
+
+2. RELATED WORK: EVIDENCE, IMPLICATIONS, AND LIMITS
+
+The following primary sources were opened and checked. This is a focused review
+for the selected experiments, not a claim of exhaustive literature coverage.
+Links are portable; access date for online sources is November 19, 2026.
+
+[1] Koutras and Freire (2026). StraTyper: Automated Semantic Type Discovery and
+Multi-Type Annotation for Dataset Collections. arXiv:2602.04004v1.
+https://arxiv.org/html/2602.04004v1
+Contribution: collection-specific vocabulary discovery and multi-type annotation,
+using clustering, selective prompting, and cascading. It supplies the task and
+baseline. Implication: preserve its open vocabulary and multi-type behavior while
+isolating component changes. Its reported results are reference points, not
+measurements of this checkout or guarantees for the proposed variants.
+
+[2] Ota, Muller, Freire, and Srivastava (2020). Data-Driven Domain Discovery for
+Structured Datasets (D4). PVLDB 13(7), 953-965.
+https://www.vldb.org/pvldb/vol13/p953-ota.pdf
+https://doi.org/10.14778/3384345.3384346
+Contribution: discovers domains using value co-occurrence context signatures.
+It discusses why direct overlap can miss disjoint subsets of a domain and why
+ambiguous overlapping values can create false matches. Implication: overlap
+alone is a weak replacement for semantic similarity; use contextual or structural
+signals as additional evidence. Limits: discovered value domains are not identical
+to LLM-generated type names. F1 below is an inspired ablation, not a D4 replica.
+The assignment's page range differs; the paper itself gives 953-965.
+
+[3] Hulsebos et al. (2019). Sherlock: A Deep Learning Approach to Semantic Data
+Type Detection. KDD 2019. https://arxiv.org/abs/1905.10688
+Contribution: combines statistical properties, character distributions, and
+language representations for semantic type detection. Implication: cheap
+structural signals deserve controlled tests alongside semantic embeddings;
+this motivates S1 and N1. Limit: its supervised fixed-label task does not validate
+our particular pattern rule or numeric-code detector, or establish open discovery
+performance. We borrow a design principle, not its architecture or score.
+
+[4] Zhang et al. (2020). Sato: Contextual Semantic Type Detection in Tables.
+PVLDB 2020. https://arxiv.org/abs/1911.06311
+Contribution: combines column values with table context through topic modeling
+and structured prediction. Implication: context is a plausible next experiment
+when generic headers or numeric values remain ambiguous. Limit: supervised
+type detection differs from discovering a new collection-specific vocabulary.
+Keep context unchanged in the main ablations to isolate sampling/representation.
+
+[5] Suhara et al. (2022). Annotating Columns with Pre-trained Language Models
+(Doduo). SIGMOD 2022. https://arxiv.org/abs/2104.01785
+https://github.com/megagonlabs/doduo
+Contribution: serializes tables and learns contextual column representations for
+type and relation prediction. Implication: table-aware representations and compact
+serialization are reasonable alternatives to averaging isolated value embeddings.
+Limit: a serialized column embedded with a general sentence encoder is not Doduo,
+and its classifier outputs are not a drop-in open-vocabulary discovery method.
+Defer a full table-model integration because it adds model and preprocessing work.
+
+[6] Reimers and Gurevych (2019). Sentence-BERT: Sentence Embeddings using Siamese
+BERT-Networks. EMNLP 2019. https://arxiv.org/abs/1908.10084
+Contribution: sentence embeddings compared with cosine similarity support
+efficient similarity search and clustering. Implication: reuse the current encoder
+to test representations before attributing gains to a different model. Limit:
+sentence similarity does not guarantee semantic typing of opaque numeric codes.
+
+[7] Zheng et al. (2023). Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena.
+NeurIPS Datasets and Benchmarks 2023. https://arxiv.org/abs/2306.05685
+Contribution: studies LLM judging and limitations including position, verbosity,
+and self-enhancement bias. Implication: blind method identity, fix evidence, audit
+order sensitivity and human agreement. Limit: conversational preference judging
+is a different setting; its agreement figures do not establish judge accuracy here.
+
+[8] BAAI, bge-small-en-v1.5 model card (optional embedding experiment).
+https://huggingface.co/BAAI/bge-small-en-v1.5
+The official card documents SentenceTransformer loading and similarity usage.
+This is a feasible alternative encoder, not evidence that it improves NYC semantic
+typing. Pin the model revision and follow its documented input conventions.
+
+Synthesis: structural patterns and numeric-code routing give focused experiments
+with modest implementation demands. Contextual/table-aware models motivate later
+work, while judge research motivates evaluation controls. None of these sources
+proves the particular new algorithms below; those are our proposed experiments.
+
+3. CHECKOUT AUDIT: WHAT ALREADY EXISTS
+
+Inspected commit: 2c2c03d61af03f8c5d079e185f851883e410bd8b.
+Repository used: /Users/adityajain/Code/stratyper.
+Paths below are repository-relative so the handoff works on another machine.
+No AGENTS.md was found in this repository during inspection.
+
+Verified local dataset archives contain 373 education CSVs and 331 city-government
+CSVs, excluding __MACOSX entries. These are archive counts, not validated counts
+of successfully ingested tables or eligible columns. Input data and metadata are
+currently ZIP archives under stratyper_datasets/{datasets,metadata}/. Use the
+step-1 chat's extracted directories and validated counts, not these ZIP paths.
+
+Important implementation facts:
+
+- src/utils.py::sample_values_to_text already supports length, random, sbert,
+  and tf-idf. SBERT sampling hardcodes paraphrase-mpnet-base-v2 and constructs
+  the model inside the sampler. TF-IDF uses character ngrams (1,4), despite the
+  config's simplified "4-grams" description. Do not present either as a new method.
+- The sampler uses sets and Python random choices. It may exceed num_samples
+  after appending representatives of previously typed values, or undershoot it
+  when strata are small. Count actual samples and tokens, not just config values.
+- src/compute_features.py::compute_column_value_embeddings averages embeddings
+  of all distinct nonnumeric values. The apparent cap in a comment is inactive.
+- Numeric features already concatenate 20 histogram bins over standardized
+  values with seven magnitude features: signed-log percentiles plus negative
+  and integral-value indicators. "Add raw magnitude/percentiles" is not a new
+  improvement over this checkout. Per-column histogram edges also differ.
+- src/utils.py::get_embeddings_index applies StandardScaler by default before
+  later L2 normalization. Any new vector representation must specify its scaling.
+- src/stratyper.py::compute_clusters intersects name and value community IDs,
+  then includes a conditional name-only fallback for some nonnumeric communities.
+  Describe this actual behavior rather than calling it a universal strict AND.
+- Numeric status is derived from pandas dtype in several places. Numeric discovery
+  can disable multi-type output. Changing dtype can therefore change prompts and
+  propagation policy, not just representations. Keep these policies fixed in N1.
+- sampling_type reaches discovery and some refinement calls, but several CCTA
+  calls use the default length sampler. Add a discovery-only override for S1;
+  do not assume one YAML setting uniformly controls all annotation sampling.
+- Annotation and embedding caches are reused. Embedding filenames mainly encode
+  the model name, which does not identify a new representation or dataset version.
+- evaluate() passes number_of_samples_ctd to the judge, rather than honoring a
+  separate judge sample budget as expected. The CLI passes number_of_samples_judge
+  into number_of_rows_judge, but that member is not used by the shown judge call.
+- evaluate() iterates the current method's annotation keys, uses its inverted
+  index when sampling judge evidence, and can reuse judgments keyed only by
+  file/column. New candidate labels may then have no judgments. --restart-eval
+  is the actual CLI spelling. Persistence also only writes eval_dict.pickle when
+  the file does not exist. Use a separate shared evaluator for fair comparisons.
+- The field called "BERTScore Description Similarity" is cosine similarity of
+  sentence embeddings of labels/descriptions, not token-level BERTScore. It is
+  a secondary proxy and must use a fixed encoder across embedding variants.
+- get_coverage counts annotation dictionary keys; independently require nonempty
+  valid label lists. Current LLM logs omit provider usage/latency in their basic
+  records; instrument these before using them for cost/runtime comparisons.
+
+These are observed code behaviors, not claims that the teammate's step-1 branch
+still has them. Preserve any justified step-1 fixes and document the differences.
+
+4. SELECTED EXPERIMENTS
+
+Minimum main comparison, independently on both collections:
+
+ID       Change from controlled baseline B0             Priority
+B0       Reproduced method + common instrumentation     Required reference
+R1       Random discovery sampling only                 Sampling control
+S1       Pattern discovery sampling only                Main modification 1
+N1       Numeric-code value representation only         Main modification 2
+F1       Weighted name/value seed clustering only        Optional third axis
+S1+N1    Combine only after standalone evaluation        Step 4, conditional
+
+Use the teammate's model IDs, temperatures, threshold schedule, prompts, context,
+min cluster size, CCTA policy, and input parsing. B0 is their established method,
+not a guessed configuration from the example YAML (whose thresholds are empty).
+First preserve the original step-1 run as B_orig. Apply common instrumentation and
+deterministic ordering to B0 and all new variants. Any behavioral bug fix requires
+a documented B_orig/B0 bridge; never compare a fixed variant only to an unfixed
+baseline. Existing B_orig annotations can be re-scored by the shared evaluator.
+
+S1: CHARACTER-PATTERN STRATIFIED DISCOVERY SAMPLING
+
+Mechanism: distinguish representations of equal length. For grouping only, map
+ASCII digits to 9, uppercase letters to A, lowercase letters to a, and preserve
+punctuation. Example: 09X163 -> 99A999; 100001 -> 999999; Queens -> Aaaaaa.
+Return original values to the LLM. Apply a documented Unicode fallback (e.g.,
+Unicode uppercase/lowercase/digit categories) and unit-test it. Do not remove
+separators or collapse repeated symbols in the first version.
+
+Implement a pure selector taking unique original strings, budget k, and RNG.
+For discovery samples only, use the same input cleaning as B0. Define a fair
+comparison harness with three selectors: length, random, and pattern. For length
+and pattern, rank strata by number of unique values descending, then signature
+lexicographically. Take one random member of each of the top min(k,M) strata;
+allocate remaining slots by round-robin over those strata, skipping exhausted
+ones, until min(k, number of unique values) samples are selected. Random takes
+that many unique values uniformly. Sort values before seeded choices.
+
+Keep inverted-index candidate retrieval intact, but do not append extra typed
+representatives outside k in the controlled sampling arms. This common budget
+rule slightly differs from the original sampler: name these B0_budget, R1_budget,
+and S1_budget, and run B0_budget versus B0 as the required sampling bridge. S1's
+causal comparison is S1_budget versus B0_budget; report its comparison to B_orig
+as the total package effect. The matrix's S1/R1 refer to these budget arms.
+Keep ordinary CCTA, refinement, judge samples, and embedding generation fixed.
+This isolates discovery sampling rather than changing every use of samples.
+
+Main k: the baseline discovery budget (normally 10, but inherit step 1). Cheap
+pilot sensitivity: k in {5,10,20} for length/random/pattern on fixed seed clusters.
+Do not tune the signature from final judged results. Same-length names and words
+can still share a signature; a pattern is not a semantic type. The ranking can
+also miss rare signatures when M>k. Explicitly inspect both failures.
+
+Before paid end-to-end runs, create a small synthetic sampling diagnostic with
+known concept groups of equal-length values and minority shares 1%, 5%, 20%
+among distinct values (the actual sampling population, rather than row frequency).
+Use at least 100 sampling seeds; report probability every concept appears in the
+sample and mean concept fraction observed. Include differing-pattern and
+same-pattern cases. This tests the mechanism, not real-world semantic recall.
+On real multi-type columns, use the separate human sample described below.
+
+Files: src/utils.py sampler; src/prompts.py::cluster_type_annotation_prompt;
+src/llm_inference.py::retrieve_seed_types and cluster_type_annotation;
+src/stratyper.py::column_type_discovery. Introduce a distinct discovery-sampling
+option so existing refinement/CCTA behavior is unchanged. Test pooled clusters,
+typed and untyped values, nulls, Unicode, k=0, fewer than k values, deterministic
+ordering, no duplicates, and a hard k cap in controlled arms.
+
+N1: CATEGORICAL REPRESENTATIONS FOR NUMERIC CODES
+
+Mechanism: identifiers such as district or ZIP codes should not be treated as
+quantities merely because pandas infers a numeric dtype. First version changes
+only numeric columns' value representations and their value-community grouping.
+It leaves physical dtype, discovery multi-type flags, name embeddings, prompts,
+value-to-type keys, and numeric CCTA policy unchanged. This deliberately tests a
+narrow representation change; broader semantic routing is a later ablation.
+
+Pre-register a conservative detector, using inputs available at inference time:
+at least 20 non-null values; at least 99% are finite integer-like numbers; and a
+tokenized header contains id, identifier, code, zip, postal, fips, or dbn, or the
+phrase "district number"/"district no". Match tokens rather than substrings.
+Exclude headers containing count, total, amount, rate, percent, percentage, score,
+year, latitude, or longitude. Ambiguity defaults to the existing numeric path.
+These are proposed heuristics, not a learned or validated semantic classifier.
+Do not route all low-cardinality integer columns as codes; record cardinality
+and fixed-width statistics for diagnostics rather than using them alone.
+
+For detected numeric codes, take up to 200 distinct original lexical values using
+deterministic seeded sampling from sorted values. Read a companion raw-string
+view only for representation, preserving leading zeroes where available; use
+the same missing-value policy. Do not change the main DataFrame parsing. Fit a
+character TF-IDF vectorizer (analyzer='char', ngram_range=(1,4), lowercase=False)
+on these individual values within the collection, then average value vectors
+per code column and L2-normalize. Do not z-score these sparse vectors. Compute
+code-code cosine communities separately; never compare their vector coordinates
+with histogram or sentence-embedding coordinates. Unflagged numeric columns and
+all textual columns retain B0 features and scaling. Keep the same threshold
+schedule for the main experiment and report it as a portability test, since the
+new representation has a different similarity distribution.
+
+No extra paid model is required. The 200-value cap is part of the categorical
+representation package; log it. Text-encoded codes already in B0's textual path
+are outside this first treatment, so code/string cross-dtype matches remain a
+known limitation. If fewer than two codes are detected, report the experiment
+as uninformative on that collection; do not silently relax the detector on test.
+
+Audit before full runs: humans inspect up to 30 detected and 30 undetected
+integer-like columns per collection, selected by seeded sampling, with names
+and values. Report detector precision and sample composition. This case-control
+sample alone does not estimate population recall. Exclude final evaluation
+tables from detector development. Freeze the detector after the pilot; if revised,
+version the rule and rerun the pilot, then use new untouched evaluation tables.
+Inspect true counts incorrectly routed as codes, codes missed by conservative
+headers, constants, and representations dominated by shared digit substrings.
+
+Files: src/compute_features.py::compute_column_value_embeddings; add a separately
+cached code-vector/index output; src/stratyper.py::compute_clusters incorporates
+code communities into value communities. Keep _is_num stable. Test leading zeros,
+float-formatted integers, all-null/constant columns, singleton code cohorts,
+exclusion headers, ID substring false positives, and consistent column mappings.
+
+F1 (OPTIONAL): WEIGHTED NAME/VALUE SEED CLUSTERING
+
+Motivation: a strong value signal might compensate for an abbreviated header,
+or a strong header for noisy values. Use B0 numeric and textual cohorts and
+their existing normalized vectors, with one column index per cohort. Construct
+z(c) = [sqrt(alpha)*n(c), sqrt(1-alpha)*v(c)] where n and v are unit vectors.
+Then dot(z(i),z(j)) = alpha*cos_name + (1-alpha)*cos_value for nonzero vectors.
+Use the existing Sentence Transformers community detector on z, same minimum
+cluster size, alpha=0.5. At cascade level l use threshold
+tau_l=(name_threshold_l+value_threshold_l)/2. Leave missing/zero-vector columns
+out of fused seed formation and log them. Keep B0 name/value communities for
+downstream CCTA; replace only seed construction, including the name-only fallback.
+
+This alters seed admission behavior as a package, not just a scalar parameter.
+Report seed count, size distribution, unclustered fraction, and manually reviewed
+coherence for large or suspicious clusters. Do not use graph connected components
+as an undocumented substitute; chaining can merge semantically unrelated groups.
+Pilot alpha in {0.25,0.5,0.75} only if budget permits; freeze before final scoring.
+Preserve B0 preprocessing in the primary comparison. Changing scaling at the
+same time would introduce another experimental axis. Main failure mode: large,
+heterogeneous clusters reduce calls while propagating incorrect types.
+
+5. OTHER OPTIONS CONSIDERED AND WHY THEY ARE DEFERRED
+
+- Embedding diversity: compare the existing sbert/tf-idf samplers as optional
+  controls on the pilot only. Time model loading, embedding, and selection
+  separately. Reusing the encoder and caching value vectors is an engineering
+  improvement, not a new semantic method. Full-value embeddings can be costly.
+- Joint serialization: embed "column: <name>; values: <fixed sample>" with the
+  existing model for textual value features, keeping all else fixed. It mixes
+  name information into both clustering signals and may truncate values. Defer
+  until the main experiments are complete, or substitute it for F1, not add all.
+- Encoder replacement: BAAI/bge-small-en-v1.5 with unchanged serialization is a
+  clean optional model arm. Pin revision, token truncation, normalization, and
+  inputs. Generic leaderboard performance does not choose a semantic-typing winner.
+  Test fixed thresholds first; separately label any pilot-retuned schedule.
+- Embedding-based type retrieval: plausible for disjoint values, but it changes
+  candidate sets, token cost, and error propagation. A later study can union exact
+  hits with top-k embedded label/prototype matches and preserve abstention/new
+  type creation. Do not select k or thresholds with final test judgments.
+- Synonym consolidation: fewer labels are not inherently better; merges can
+  collapse borough names with borough codes or a subtype with a broader type.
+  Defer automated merging until equivalence, granularity, and evidence are audited.
+- Richer rows/descriptions and uncertainty gating: useful but introduce context
+  budgets, availability differences, and additional model calls/calibration. Keep
+  them fixed now. Metadata used by the evaluator must not accidentally become
+  variant-only discovery evidence. Downstream matching is optional after step 4.
+
+6. FAIR EVALUATION PROTOCOL
+
+6.1 Freeze the comparison universe and evidence
+
+Create a manifest of every (dataset, file, column), physical dtype, non-null count,
+and input hash. Main universe U: all ingested columns with at least one valid
+non-null value; separately report all-null columns and coverage over all ingested
+columns. Keep U and numeric/textual strata identical across methods. Define an
+independent audited code subset; do not redefine it using N1's predictions.
+
+For every column, build judge evidence once: the same three context rows and
+up to 20 unique values, using a fixed method-independent length/pattern mix.
+Use no method's inverted index. Select rows deterministically, and cache the
+literal evidence text. Record description availability; use the same metadata
+for every method. A 20-value judge budget is an evaluation choice, separate from
+discovery k. If token limits require a cap, define and log one common rule.
+Judge evidence can miss rare concepts; report this limitation and manually
+inspect mixed columns with fuller data.
+
+Collect the union of proposed labels per column from all compared methods.
+Use conservative surface normalization for duplicates; preserve original names
+and do not conflate semantic synonyms automatically. Judge each unique
+(column, label) against the fixed evidence in an independent request, with method
+identity hidden. The existing subset-match rubric can be reused: any real
+identifiable subset may support a label, but generic syntactic types do not.
+Do not turn unproposed labels into supposed false negatives.
+
+Independent label judgments avoid different candidate-list sizes affecting the
+decision and can be reused across runs. If batching labels is necessary for
+budget reasons, fix the batch construction across methods, randomize ordering
+once, and repeat reversed-order batches on a 10% audit. Report the protocol.
+
+Use one fixed judge provider/model/version/temperature, preferably a different
+model family from discovery, inheriting step 1 where possible. Cache by input
+hash, column ID, evidence hash, label, judge model/version, prompt version, and
+decoding settings. An old column-only judgment cache is insufficient. Malformed
+or missing judgments are failures to resolve, not automatic incorrect labels.
+Keep unresolved labels explicit; report their rate and metric bounds if any
+remain. Save evidence and responses for audit. Do not judge unannotated columns
+as errors in precision; count them as zero in coverage/all-column hit rate.
+
+6.2 Primary measures, with explicit denominators
+
+For a method m, A_c is its deduplicated predicted label set for column c;
+y(c,t)=1 when the judge marks label t correct, 0 when incorrect.
+
+- Annotation coverage = sum_c 1[|A_c|>0] / |U|.
+- Micro label precision = sum_c sum_t_in_Ac y(c,t) / sum_c |A_c|.
+- Hit rate among annotated columns = sum_c 1[any correct label] /
+  sum_c 1[|A_c|>0]. This is closest to the existing evaluated-population metric.
+- All-column hit rate = sum_c 1[any correct label] / |U|. This captures both
+  coverage and having at least one correct label; it is not semantic recall.
+- Macro column precision = mean of (correct labels / predicted labels) over
+  annotated columns. Report it alongside micro precision so prolific labels
+  and very large clusters do not dominate silently.
+
+Use N/A for empty precision denominators, never 100%. Compute each metric
+separately for NYC-E, NYC-CG, numeric, textual, audited codes, and audited mixed
+columns where support permits. Report each subgroup's count. Preserve physical
+dtype strata from the manifest even if future routing changes internal flags.
+Stage-1 versus stage-2 metrics help locate discovery versus propagation failures.
+
+6.3 Redundancy, specificity, cost, and runtime
+
+- Report number of distinct surface-normalized types and labels per column,
+  including singleton type counts. Neither is a redundancy score by itself.
+- On a reproducible vocabulary audit, humans decide strict semantic equivalence,
+  keeping representation differences and parent/subtype distinctions separate.
+  For a fully audited vocabulary with K labels and G equivalence groups, use
+  redundancy R=(K-G)/K. If only sampled pairs/types were audited, report the
+  sampled synonym frequency and sampling scheme, not a whole-vocabulary R.
+  For large vocabularies, combine random pairs with high-similarity pairs, and
+  report those samples separately rather than extrapolating a biased rate.
+- Audit generic labels, header copying without semantic information, and
+  over-specific labels unsupported by evidence. Correctness can be inflated by
+  broad labels or synonyms, so include these qualitative rates.
+- Record API calls, retries, input/output/cached tokens, provider/model, and
+  actual billed usage per phase: embedding, CTD, CCTA, judge, manual-assistance
+  calls. Keep production CTD+CCTA cost separate from evaluation cost.
+- Price estimates must use dated provider prices at execution and account for
+  caching/reasoning charges where applicable. Do not invent a dollar total now.
+  Report local inference wall time/hardware separately rather than calling it
+  free. Include production dollars per 1,000 eligible columns and per 1,000
+  columns with at least one correct label (N/A for zero successful columns).
+- Report end-to-end production wall time, feature time, clustering time,
+  discovery time, annotation time, peak memory if available, and judge time
+  separately. State hardware, concurrency, cold/warm caches, and network effects.
+  Cached baseline time is not comparable to a newly computed variant.
+
+6.4 Human verification and uncertainty
+
+Recommended feasible audit: per collection, reserve 60 random non-pilot columns
+for a representative audit, plus up to 20 audited code columns and up to 20 likely
+mixed columns as explicitly separate challenge sets. Include unannotated columns.
+Do not pool challenge sets into a population estimate without sampling weights.
+If 100 columns per collection is infeasible, retain the random sample first and
+disclose the smaller challenge sets. Reuse the same selected columns for methods.
+
+Two team members independently identify semantic concepts from fuller values
+and context before seeing method labels. Resolve disagreements and record the
+rubric. Then map predictions to concept sets, accepting synonyms while recording
+granularity differences. A generic label must not receive credit for all specific
+concepts. Estimate precision/recall/F1 only against these human reference sets;
+name the inspected-value budget and avoid claiming exhaustive truth when data
+inspection was limited. Compare judge decisions with human decisions on the
+same label-column pairs. Report agreement and common disagreements.
+
+For the synthetic sampler diagnostic, ground-truth concept groups are known, so
+sample concept coverage is measurable. Do not call this annotation F1 or mix it
+with real-dataset scores. Expected failure examples are hypotheses until observed.
+
+For main method differences use paired bootstrap intervals resampling tables
+(2,000 resamples, fixed seed), keeping methods paired. Columns within a table
+are correlated. Discovery clusters can span tables, so these intervals describe
+table-level outcome variation conditional on the run, not full algorithmic
+uncertainty. Repeat B0 and the strongest eligible variant with three seeds if
+budget permits; report seed dispersion separately. One API run plus a bootstrap
+does not establish reproducibility or significance across LLM generations.
+
+7. RUN PLAN, BUDGET CONTROL, AND DECISION RULES
+
+Phase A: reconcile step 1 and implement observability.
+Record baseline commit/configs, dataset hashes, extraction filters, model IDs,
+available outputs and judge settings. Protect original result directories. Add
+stable file/set ordering, seeded RNGs, phase timing, and provider usage logging.
+Use PYTHONHASHSEED at process start where needed; it alone does not seed Python,
+NumPy, torch, KMeans, or remote providers. State provider nondeterminism.
+Validate annotation schemas and column IDs. If a shared fix changes outputs,
+establish B0 with a small bridge before applying it to variants.
+
+Phase B: cheap diagnostics and a pilot.
+Select 10% of tables per collection by a fixed seeded shuffle for development;
+stratify by table width if feasible and store the split. Keep the remaining tables
+untouched for final assessment. Run sampler diagnostics, code-detector audit,
+and no-LLM clustering summaries first. Then run a small pilot using inherited
+models and budgets. Log cost per cluster/column to estimate full-run expenditure.
+Do not choose variants by looking at final judge scores.
+
+Freeze all algorithm choices after pilot development. For the clean primary
+comparison, run every arm independently on the non-pilot table collection, with
+fresh type inventories and indices; do not seed these from pilot discoveries.
+The full-collection step-1 baseline remains the reproduction result. If the team
+also runs frozen variants over the entire collection to match that baseline,
+label that comparison as full-collection/descriptive because pilot tables were
+used in design. This is an unsupervised collection-discovery setting, not a claim
+of supervised prediction on unseen tables. For cost limits, a pre-registered
+smaller evaluation collection is acceptable; name it explicitly.
+
+Main run matrix: B0, B0_budget, R1_budget, S1_budget, N1 on each collection =
+10 production runs at one seed, minus any genuinely reusable equivalent B0 runs.
+F1 adds two runs. Include pilot and judge cost separately. B0_budget versus B0
+quantifies the common sample-budget wrapper; S1_budget versus B0_budget isolates
+the signature change. N1 and F1 compare with B0, without that wrapper. Keep each
+experiment's causal reference explicit in every table and chart.
+
+Phase C: main evaluation and selection.
+For step 4 integration eligibility, pre-register a practical gate: at least
+2 percentage points higher all-column hit rate OR at least 15% lower production
+cost, with no more than 1 percentage point lower micro precision and no more
+than 2 points lower annotation coverage. Treat these as team-chosen practical
+tolerances, not established statistical thresholds. Require uncertainty intervals
+and subgroup review before claiming a robust gain; inconclusive differences stay
+inconclusive. Report Pareto tradeoffs even for variants that miss the gate.
+If a variant helps one collection and hurts the other, report separate effects;
+do not hide them behind a pooled average or choose per-dataset settings post hoc.
+
+Only combine S1 and N1 after their individual effects are measured. Reuse the
+same causal sampling reference when interpreting the combination. If neither
+helps, the negative result and failure analysis still answer the research question.
+
+No spending budget was supplied. Before launching paid runs, the step-3 chat
+should use its existing authorization/budget or present the pilot-based estimated
+calls, token totals, and dollar cap to the team if that cap has not been set.
+This handoff does not authorize unlimited spending or changing paid models.
+Instrumentation and implementation can proceed without waiting for baseline
+performance numbers. Never overwrite baseline outputs to save storage.
+
+8. IMPLEMENTATION CONTRACT FOR THE STEP-3 CODEX CHAT
+
+Attach this file in the existing step-1 chat, then paste:
+
+"Use the attached step-2 handoff to implement our selected StraTyper experiments.
+Reconcile it with your step-1 code, configs, datasets, results, fixes, and budget.
+Start with the experiment manifest, instrumentation, shared evaluator, discovery-
+only sampling harness (including B0_budget), S1, and N1. Keep the original baseline
+and result caches intact. Run cheap diagnostics and pilot checks before paid
+full runs. Preserve individual ablations and explicit causal reference arms.
+Use existing spending authorization; obtain a concrete capped budget only if
+needed. Do not claim findings before measurement. F1 and other options are
+secondary; the integration run belongs after standalone comparison. Produce
+reproducible configs, per-column outputs, results tables, and failure analysis."
+
+Suggested new config options (not existing CLI features):
+discovery_sampler: baseline | controlled_length | controlled_random | pattern
+discovery_sample_budget: <inherited k>
+code_value_representation: baseline | categorical_tfidf
+seed_clustering: baseline | weighted
+fusion_alpha: 0.5
+random_seed: 42
+Keep old configuration defaults compatible. Explicitly pass the discovery-only
+selector through all discovery paths without changing refinement/CCTA selection.
+Add a separate judge sample budget and context-row budget in the new evaluator;
+do not copy the existing judge-parameter wiring error into new configs.
+
+Suggested layout, adaptable to step 1's established organization:
+  experiments/step2/configs/<collection>/<variant>.yaml
+  experiments/step2/manifests/{inputs,pilot_split,runs}.json
+  experiments/step2/evidence/<collection>.jsonl
+  experiments/step2/results/<collection>/<variant>/seed_<seed>/
+  experiments/step2/reports/{summary.csv,per_column.jsonl,failure_cases.txt}
+Do not commit raw data, credentials, or large caches. Every cache key/directory
+must identify dataset hash, code/config version, encoder revision, representation,
+and sampling settings. Hash literal prompts for response reuse; avoid sharing
+responses between variants whose prompts differ. Preserve stable identifiers.
+
+Minimum result row fields:
+collection, evaluation_population, variant, causal_reference, seed, commit,
+config_hash, dataset_hash, eligible_columns, annotated_columns, predicted_labels,
+correct_labels, hit_columns, coverage, precision_micro, precision_macro,
+hit_rate_annotated, hit_rate_all, unique_types, redundancy_audit_protocol,
+ctd_calls, ccta_calls, retry_calls, input_tokens_by_model, output_tokens_by_model,
+production_usd, evaluation_usd, feature_seconds, cluster_seconds, ctd_seconds,
+ccta_seconds, production_seconds, judge_seconds, unresolved_judgments.
+Store unrounded counts; derive subgroup metrics and intervals from per-column data.
+
+Required checks: old defaults still load; a tiny mocked pipeline has no paid
+calls; controlled samplers obey k; numeric representation vectors are finite;
+column indices agree; empty cohorts and zero denominators are handled; cache
+invalidation works; missing judge labels cannot silently become incorrect; every
+main variant uses identical U and judge evidence. Use substantive tests of these
+failure modes, not tests that merely restate implementation details.
+
+Expected report figures: correctness versus production cost; all-column hit rate
+versus coverage; per-collection/subgroup effect plots with intervals; sampler
+budget versus synthetic concept coverage and real judged outcomes. Include
+negative cases: same-pattern different concepts, measurements mistaken for codes,
+missed code headers, disjoint categorical values, and incoherent fused clusters.
+Select observed examples only after runs, saving their actual evidence.
+
+Done for step 3 means: independent variants implemented with isolated caches;
+cheap checks passed; authorized pilot/main runs completed or an explicit budget
+limitation recorded; every completed run evaluated consistently; reproducibility
+artifacts and observed failure cases available. Combining promising variants,
+downstream matching, and final project conclusions remain subsequent work.
+
+9. SOURCE AND PROVENANCE NOTES
+
+Project scope was read from all three pages of the supplied Project Proposal.pdf,
+including its approach and milestone table, and from the supplied assignment
+text. The linked Google Doc was not needed or opened; the uploaded PDF was the
+proposal source. Local observations came from README.md, requirements.txt,
+config/stratyper.example.yaml, and the inspected functions in src/stratyper.py,
+src/compute_features.py, src/utils.py, src/prompts.py, and src/llm_inference.py.
+Online evidence is cited in section 2. Proposed thresholds, rules, audit sizes,
+budgets, and algorithms in this handoff are experimental design choices, not
+claims extracted from those papers. Confirm all code pointers against the
+teammate's branch before editing.
