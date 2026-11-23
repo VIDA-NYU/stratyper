@@ -95,7 +95,7 @@
   "limitations": [
     "Model-substituted reproduction; not the exact paper model configuration",
     "Judge token usage is not reported by the original code; recorded token counts do not represent complete spend",
-    "Summary metrics transcribed from verified server status; full original-generated artifacts remain in private Dataproc/HDFS storage"
+    "Summary metrics transcribed from verified server status; full original-generated outputs remain in private Dataproc/HDFS storage; embedding caches are additionally distributed in the ZIP"
   ],
-  "artifact_availability": "This commit publishes summary metrics and configuration templates. Binary embeddings, per-column predictions, raw API logs, datasets, and model weights are not bundled. See ARTIFACTS.md."
+  "artifact_availability": "Summary metrics, configuration templates, and all six binary embedding caches are included. See ARTIFACTS.md and stratyper-nyc-embeddings-2026-11-22.zip; raw datasets, model weights, raw API logs, and full per-column annotations are not bundled."
 }

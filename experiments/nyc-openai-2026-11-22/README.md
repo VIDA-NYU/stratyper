@@ -2,7 +2,7 @@
 
 The original StraTyper code completed discovery, annotation, and built-in evaluation for both collections. The direct LLM baseline achieved higher Precision and Hits on the original evaluator's comparison subset in this run.
 
-This is **one run with approved OpenAI model substitutions**, not an exact reproduction of the paper's model configuration. The experiment used source commit `36144561f6334143bc24b58794c86687a2411c60`; its source files, prompts, feature construction, and evaluator were unchanged. This directory adds results and configuration templates only.
+This is **one run with approved OpenAI model substitutions**, not an exact reproduction of the paper's model configuration. The experiment used source commit `36144561f6334143bc24b58794c86687a2411c60`; its source files, prompts, feature construction, and evaluator were unchanged. This directory adds results, configuration templates, and saved embedding caches.
 
 Completed: **2026-11-23 03:56:45 UTC** (2026-11-22 22:56:45 America/New_York). Final YARN state: **FINISHED / SUCCEEDED**.
 
@@ -34,6 +34,10 @@ Full reported numeric/textual breakdowns and available token counts are in [resu
 - Original value batch size: 256; maximum sequence length: 512; numeric features: histogram 20 + magnitude 7 = 27 dimensions.
 
 Key observed environment versions and resource settings are in [environment.json](environment.json).
+
+## Download the completed embeddings
+
+[Download NYC-E and NYC-CG embedding caches (27.5 MB)](stratyper-nyc-embeddings-2026-11-22.zip?raw=1). The ZIP contains all six original cache files, an inner manifest, per-file SHA-256 checksums, and a short reuse guide. See [ARTIFACTS.md](ARTIFACTS.md) for verification and extraction instructions.
 
 ## Running with the original CLIs
 

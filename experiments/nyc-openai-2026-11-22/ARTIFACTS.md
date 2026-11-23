@@ -1,10 +1,34 @@
-# Saved features and experiment artifacts
+# Saved embeddings: download, verify, and reuse
 
-Both collections have completed embedding caches in private NYU Dataproc/HDFS storage. This Git commit contains summary metrics and portable configuration templates; it does not distribute binary caches, datasets, model weights, full per-column annotations, or raw API logs.
+[Download the completed NYC-E and NYC-CG caches (27.5 MB ZIP)](stratyper-nyc-embeddings-2026-11-22.zip?raw=1).
 
-## Cache names
+The archive contains six original pickle files: column-name embeddings, text-value embeddings, and numeric feature vectors for each collection. The original experiment source commit is `36144561f6334143bc24b58794c86687a2411c60` and the embedding model is `sentence-transformers/paraphrase-mpnet-base-v2`, localized as `./model`. Dataset contents, model weights, credentials, and raw API logs are not included.
 
-The recorded embedding model was available as `./model`. The original code consequently used these exact cache filenames:
+## Verify and extract
+
+From this directory, with the ZIP and `SHA256SUMS` present:
+
+```bash
+# macOS
+shasum -a 256 -c SHA256SUMS
+# Linux alternative: sha256sum -c SHA256SUMS
+unzip stratyper-nyc-embeddings-2026-11-22.zip -d embeddings
+cd embeddings
+shasum -a 256 -c SHA256SUMS
+# Linux alternative: sha256sum -c SHA256SUMS
+```
+
+The outer ZIP SHA-256 is:
+
+```text
+aa3a2b7e3edf9f937a052c4a415ab104100e5c9d296ded5704de0d4398031194
+```
+
+The embedded manifest and [embedding-manifest.json](embedding-manifest.json) record each file's byte size, hash, dictionary table/column counts, and vector dimensions. The ZIP hash and all six file hashes were checked against the original server export before publication. Only load pickle artifacts from a trusted source, since unpickling can execute code.
+
+## Reuse with the original CLI
+
+After extraction, set the NYC-E configuration's `embedding_path` to the absolute path of `embeddings/NYC-E`, and the NYC-CG configuration's `embedding_path` to the absolute path of `embeddings/NYC-CG`. Keep these exact cache filenames inside each directory:
 
 ```text
 column_name_embeddings_._model.pickle
@@ -12,12 +36,10 @@ column_value_embeddings_._model.pickle
 column_num_value_embeddings_._model.pickle
 ```
 
-The name and text-value dictionaries contain embedding vectors; the numeric dictionary contains 27-dimensional feature vectors. Numeric-only tables may have no text-value entry, so text and numeric dictionary table counts need not match.
+Preserve `models.embedding_model: ./model`, and run with the same embedding model available as `./model` in the working directory. The original code constructs cache filenames from that model-path string. Use the same input CSVs, table basenames, column names, and feature settings as the recorded run.
 
-## Restoring from the existing experiment
+The original CLI calls `compute_clusters(..., recompute=False)` and reads these existing cache files. Type discovery, annotation, and evaluation can then run without recomputing table embeddings. These caches do not include baseline annotations; configure or generate the comparison baseline separately if needed.
 
-The experiment owner can export the completed `NYC-E-artifacts.tar.gz` and `NYC-CG-artifacts.tar.gz` archives from the experiment's private HDFS run directories. Each archive contains `results/<collection>/embeddings/`, together with the corresponding baseline and StraTyper outputs. Keep the collections separate. The final NYC-CG run also saved a standalone `embedding-cache.tar.gz`.
+Name and text-value vectors have 768 dimensions. Numeric vectors have 27 dimensions (20 histogram bins plus 7 magnitude features). Numeric-only tables may have no text-value entry, so text and numeric dictionary table counts need not match.
 
-Copy each collection's three cache files into the directory selected by its `embedding_path` configuration. Preserve the model identifier `./model`, table basenames, column names, input data, and original feature settings. The original CLI reads these cached features when it calls `compute_clusters(..., recompute=False)`; API stages can then be run without re-encoding the table values.
-
-Use pickle artifacts only from a trusted source: loading pickle can execute code. Binary checksums were not collected for this public summary; verify any exported artifacts before sharing or reuse. Private storage access and artifact distribution must be arranged with the experiment owner.
+Complete per-column predictions and the full original-generated run archives remain in private NYU Dataproc/HDFS storage.

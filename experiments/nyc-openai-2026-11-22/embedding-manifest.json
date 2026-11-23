@@ -1,0 +1,70 @@
+{
+  "source_commit": "36144561f6334143bc24b58794c86687a2411c60",
+  "embedding_model": "sentence-transformers/paraphrase-mpnet-base-v2",
+  "model_path": "./model",
+  "max_sequence_length": 512,
+  "value_batch_size": 256,
+  "numeric_histogram_bins": 20,
+  "files": [
+    {
+      "path": "NYC-E/column_name_embeddings_._model.pickle",
+      "bytes": 10681385,
+      "sha256": "5a68f4dbd91e16688a44cbd8643f42a8555e4575dce98f39a6e3c0dd4a06338a",
+      "tables": 373,
+      "columns": 3409,
+      "dimensions": [
+        768
+      ]
+    },
+    {
+      "path": "NYC-E/column_num_value_embeddings_._model.pickle",
+      "bytes": 551937,
+      "sha256": "2725a9e9abfc7bc24716f19eda0aa82ae6f73ab7308802415be21760e79b458f",
+      "tables": 373,
+      "columns": 1965,
+      "dimensions": [
+        27
+      ]
+    },
+    {
+      "path": "NYC-E/column_value_embeddings_._model.pickle",
+      "bytes": 4529263,
+      "sha256": "91f099fa6d34f80ff7d4b0c8b94b49d926b24fbca7370b6012bf4411082f0f9f",
+      "tables": 365,
+      "columns": 1444,
+      "dimensions": [
+        768
+      ]
+    },
+    {
+      "path": "NYC-CG/column_name_embeddings_._model.pickle",
+      "bytes": 9613485,
+      "sha256": "3deab53db025f47f9be15cd3ff5b1adf0e7d36c8695a6c1e6d1fbcd3bea63a2b",
+      "tables": 331,
+      "columns": 3071,
+      "dimensions": [
+        768
+      ]
+    },
+    {
+      "path": "NYC-CG/column_num_value_embeddings_._model.pickle",
+      "bytes": 395975,
+      "sha256": "d8e36d6c3d5be478fa2eaa90c802c9b9279d74d393997491b8c0ffdb1bea45f3",
+      "tables": 331,
+      "columns": 1378,
+      "dimensions": [
+        27
+      ]
+    },
+    {
+      "path": "NYC-CG/column_value_embeddings_._model.pickle",
+      "bytes": 5318841,
+      "sha256": "78c01a26eb87ed2b7b14f78a040f5b784f526665796bdbd279bfe3d123e26dba",
+      "tables": 328,
+      "columns": 1693,
+      "dimensions": [
+        768
+      ]
+    }
+  ]
+}
