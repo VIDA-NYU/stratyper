@@ -1,0 +1,12 @@
+# Edit absolute paths before running.
+dataset_path: /absolute/path/to/experiment/NYC-E/tables
+log_filepath: /absolute/path/to/experiment/NYC-E/baseline/llm_calls.jsonl
+api: openai
+model: gpt-4.1-2025-04-14
+temperature: 0.3
+prompt_type: stratyper
+coverage: full
+column: null
+number_of_rows: 10
+type_reuse: false
+multiple_types: true

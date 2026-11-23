@@ -1,0 +1,5 @@
+dataset,Method,Precision,Hits,BERTScore Description Similarity,Hits (NUMERICAL),Precision (NUMERICAL),Hits (TEXTUAL),Precision (TEXTUAL)
+NYC-E,StraTyper,0.582,0.66,0.568,0.522,0.506,0.823,0.64
+NYC-E,StraTyper_LLM,0.833,0.967,0.592,0.954,0.779,0.982,0.896
+NYC-CG,StraTyper,0.592,0.776,0.494,0.779,0.708,0.774,0.549
+NYC-CG,StraTyper_LLM,0.835,0.979,0.554,0.971,0.786,0.983,0.864

@@ -1,0 +1,101 @@
+{
+  "state": "completed",
+  "verified_yarn_state": "FINISHED",
+  "verified_yarn_final_state": "SUCCEEDED",
+  "final_application_id": "application_1788279331828_8758",
+  "finished_at_utc": "2026-11-23T03:56:45.663467+00:00",
+  "finished_at_new_york": "2026-11-22T22:56:45.663467-05:00",
+  "source_commit": "36144561f6334143bc24b58794c86687a2411c60",
+  "source_digest": "0b5a0140ad699b301dab0a6f596aa9b7d9dca7d784f3aeb3137d1aac13010970",
+  "source_unchanged": true,
+  "reproduction": "Original source with previously approved OpenAI model substitutions",
+  "models": {
+    "discovery_and_direct_baseline": "gpt-4.1-2025-04-14",
+    "annotation_and_judge": "gpt-4.1-mini-2025-04-14",
+    "embedding": "paraphrase-mpnet-base-v2"
+  },
+  "datasets": [
+    {
+      "dataset": "NYC-E",
+      "tables": 373,
+      "total_columns": 3409,
+      "columns_with_nonempty_types": 2896,
+      "discovered_types": 334,
+      "evaluation": [
+        {
+          "Method": "StraTyper",
+          "BERTScore Description Similarity": 0.568,
+          "Hits": 0.66,
+          "Precision": 0.582,
+          "Hits (NUMERICAL)": 0.522,
+          "Precision (NUMERICAL)": 0.506,
+          "Hits (TEXTUAL)": 0.823,
+          "Precision (TEXTUAL)": 0.64
+        },
+        {
+          "Method": "StraTyper_LLM",
+          "BERTScore Description Similarity": 0.592,
+          "Hits": 0.967,
+          "Precision": 0.833,
+          "Hits (NUMERICAL)": 0.954,
+          "Precision (NUMERICAL)": 0.779,
+          "Hits (TEXTUAL)": 0.982,
+          "Precision (TEXTUAL)": 0.896
+        }
+      ],
+      "token_usage": {
+        "CTD_input": 807072,
+        "CTD_output": 12718,
+        "CCTA_input": 668581,
+        "CCTA_output": 19425,
+        "direct_baseline_input": 315023,
+        "direct_baseline_output": 60915
+      },
+      "nonempty_column_coverage": 0.8495159870929891
+    },
+    {
+      "dataset": "NYC-CG",
+      "tables": 331,
+      "total_columns": 3071,
+      "columns_with_nonempty_types": 1927,
+      "discovered_types": 273,
+      "evaluation": [
+        {
+          "Method": "StraTyper",
+          "BERTScore Description Similarity": 0.494,
+          "Hits": 0.776,
+          "Precision": 0.592,
+          "Hits (NUMERICAL)": 0.779,
+          "Precision (NUMERICAL)": 0.708,
+          "Hits (TEXTUAL)": 0.774,
+          "Precision (TEXTUAL)": 0.549
+        },
+        {
+          "Method": "StraTyper_LLM",
+          "BERTScore Description Similarity": 0.554,
+          "Hits": 0.979,
+          "Precision": 0.835,
+          "Hits (NUMERICAL)": 0.971,
+          "Precision (NUMERICAL)": 0.786,
+          "Hits (TEXTUAL)": 0.983,
+          "Precision (TEXTUAL)": 0.864
+        }
+      ],
+      "token_usage": {
+        "CTD_input": 434659,
+        "CTD_output": 7060,
+        "CCTA_input": 1257143,
+        "CCTA_output": 16471
+      },
+      "discovery_annotation_evaluation_seconds": 6338.8973710993305,
+      "nonempty_column_coverage": 0.6274829045913384
+    }
+  ],
+  "evaluation_scope": "Original evaluator: StraTyper-annotated columns; direct baseline evaluated on that same subset. Not a full-column baseline evaluation.",
+  "limitations": [
+    "Model-substituted reproduction; not the exact paper model configuration",
+    "Judge token usage is not reported by the original code; recorded token counts do not represent complete spend",
+    "Summary metrics transcribed from verified server status; full original-generated artifacts remain in private Dataproc/HDFS storage"
+  ],
+  "artifact_availability": "This commit publishes summary metrics and configuration templates. Binary embeddings, per-column predictions, raw API logs, datasets, and model weights are not bundled. See ARTIFACTS.md."
+}
