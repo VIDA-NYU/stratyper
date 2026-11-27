@@ -532,10 +532,12 @@ def get_client(provider: str) -> OpenAI | Portkey:
     }
 
     if provider == "portkey":
-        return Portkey(
-            api_key=os.getenv("PORTKEY_API_KEY"),
-            virtual_key=os.getenv("PORTKEY_VIRTUAL_API_KEY")
-        )
+        options = {"api_key": os.getenv("PORTKEY_API_KEY")}
+        if os.getenv("PORTKEY_VIRTUAL_API_KEY"):
+            options["virtual_key"] = os.getenv("PORTKEY_VIRTUAL_API_KEY")
+        if os.getenv("PORTKEY_BASE_URL"):  # a self-hosted gateway, e.g. a university's
+            options["base_url"] = os.getenv("PORTKEY_BASE_URL")
+        return Portkey(**options)
     elif provider in configs:
         conf = configs[provider]
         if not conf.get("api_key") and provider != "ollama":
