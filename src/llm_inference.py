@@ -1,3 +1,4 @@
+import time
 from prompts import column_type_annotation, \
     closed_column_type_annotation, cluster_type_annotation_prompt, judge_column_type_prompt
 from utils import extract_dict_from_response, log_llm_call, suppress_output, get_client
@@ -12,6 +13,22 @@ import re
 from difflib import get_close_matches
 import yaml
 import numpy as np 
+
+
+def _chat(client, model: str, temperature: float, system_message: str, user_message: str,
+          system_role: str = "system", max_attempts: int = 5):
+    """One chat completion: the system and user prompts as two messages, retried a bounded number of times.
+
+    The prompts used to be sent as a single dict with duplicate "role"/"content" keys, so only the user
+    message reached the model; and an empty response was retried forever.
+    """
+    messages = [{"role": system_role, "content": system_message}, {"role": "user", "content": user_message}]
+    for attempt in range(max_attempts):
+        completion = client.chat.completions.create(model=model, temperature=temperature, messages=messages)
+        if completion.choices:
+            return completion
+        time.sleep(min(2 ** attempt, 30))
+    raise RuntimeError(f"No completion from {model} after {max_attempts} attempts")
 
 def llm_cta_directory(dataset_path:str, log_filepath:str=None, api:str='ollama', model:str="phi4:latest", type_reuse:bool=False,
                   coverage:str = "single", multiple_types:bool=False, column:str = None, temperature:float=0.3, number_of_rows:int=3, prompt_type:str='stratyper') -> dict[str, dict[str, list[str]]]:
@@ -29,35 +46,11 @@ def llm_cta_directory(dataset_path:str, log_filepath:str=None, api:str='ollama',
             cta_system_message, cta_user_message = column_type_annotation(df, coverage=coverage, num_rows=number_of_rows, column=column, multiple_types=multiple_types, semantic_types=list(semantic_types) if semantic_types else None, prompt_type=prompt_type)
 
             try:
-                completion = client.chat.completions.create(
-                    model=model,
-                    temperature=temperature,
-                    messages=[
-                        {
-                            "role": "developer",
-                            "content": cta_system_message,
-                            "role": "user",
-                            "content": cta_user_message
-                        }
-                    ]
-                )
+                completion = _chat(client, model, temperature, cta_system_message, cta_user_message, system_role="developer")
             except:
                  print(dataset)
                  raise Exception("Error")
 
-            while not completion.choices: # until completion is not None
-                completion = client.chat.completions.create(
-                    model=model,
-                    temperature=temperature,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": cta_system_message,
-                            "role": "user",
-                            "content": cta_user_message
-                        }
-                    ]
-                )
             response = completion.choices[0].message.content
             if log_filepath:
                 log_llm_call(logpath=log_filepath, prompt=cta_user_message, response=response, model=model, filepath=dataset, column=column)
@@ -135,32 +128,8 @@ def closed_cta_single(file_path:str, log_path:str=None, api:str='ollama', model:
                                                                            numerical=is_numeric_dtype(df[column]), 
                                                                            inverted_index=inverted_index, multiple_types=False if is_numeric_dtype(df[column]) else True)
 
-    completion = client.chat.completions.create(
-        model=model,
-        temperature=temperature,
-        messages=[
-            {
-                "role": "system",
-                "content": ccta_system_message,
-                "role": "user",
-                "content": ccta_user_message
-            }
-        ]
-    )
+    completion = _chat(client, model, temperature, ccta_system_message, ccta_user_message)
 
-    while not completion.choices: # until completion is not None
-                completion = client.chat.completions.create(
-                    model=model,
-                    temperature=temperature,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": ccta_system_message,
-                            "role": "user",
-                            "content": ccta_user_message
-                        }
-                    ]
-                )
     response = completion.choices[0].message.content
 
     # Log the LLM call
@@ -206,32 +175,8 @@ def cluster_type_annotation(file_path:str, columns:list[tuple[str, str]], log_pa
                                                                                   whole_cluster_samples=whole_cluster, multiple_types=multiple_types,
                                                                                   inverted_index=inverted_index, context=context)
 
-    completion = client.chat.completions.create(
-        model=model,
-        temperature=temperature,
-        messages=[
-            {
-                "role": "system",
-                "content": cluster_system_message,
-                "role": "user",
-                "content": cluster_user_message
-            }
-        ]
-    )
+    completion = _chat(client, model, temperature, cluster_system_message, cluster_user_message)
 
-    while not completion.choices: # until completion is not None
-                completion = client.chat.completions.create(
-                    model=model,
-                    temperature=temperature,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": cluster_system_message,
-                            "role": "user",
-                            "content": cluster_user_message
-                        }
-                    ]
-                )
     response = completion.choices[0].message.content
 
     # Log the LLM call
@@ -257,32 +202,8 @@ def judge_column_type(file_path:str, semantic_types:list[str],log_path:str=None,
                                                                         explanation=explanation, sampling=sampling, inverted_index=inverted_index, 
                                                                         num_samples=num_samples, num_rows=num_rows)
 
-    completion = client.chat.completions.create(
-        model=model,
-        temperature=temperature,
-        messages=[
-            {
-                "role": "system",
-                "content": judge_system_message,
-                "role": "user",
-                "content": judge_user_message
-            }
-        ]
-    )
+    completion = _chat(client, model, temperature, judge_system_message, judge_user_message)
 
-    while not completion.choices: # until completion is not None
-                completion = client.chat.completions.create(
-                    model=model,
-                    temperature=temperature,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": judge_system_message,
-                            "role": "user",
-                            "content": judge_user_message
-                        }
-                    ]
-                )
     response = completion.choices[0].message.content
 
     # Log the LLM call
