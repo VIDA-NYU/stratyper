@@ -375,6 +375,10 @@ class Stratyper:
                             has_length_gap = len(sorted_ulens) > 1 and np.any(np.diff(sorted_ulens) > max(iqr, 1))
                             column_is_homogeneous = not has_length_gap and (num_like < 0.1 or num_like > 0.9)
                             if not column_is_homogeneous:
+                                # a mixed column keeps the cluster's full type set (paper, Section IV-A)
+                                for value in self.dataframes[fname][cname].dropna().unique():
+                                    inverted_index.setdefault(value, set()).update(answer)
+                                annotations_stage_1.setdefault(fname, {})[cname] = list(answer)
                                 continue
                             response_ccta, _, _ = closed_cta_single(os.path.join(self.dataset_path,fname), log_path=logpath_ccta_refinement, api=api_ccta_refinement, model=model_ccta_refinement,
                                                                     num_samples=self.number_of_samples_ccta, num_rows=self.number_of_rows_ccta, column=cname, semantic_types=answer,

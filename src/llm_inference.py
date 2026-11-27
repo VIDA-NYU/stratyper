@@ -304,6 +304,11 @@ def retrieve_seed_types(file_path:str, log_path_ctd:str, clusters:list[list[tupl
                 has_length_gap = len(sorted_ulens) > 1 and np.any(np.diff(sorted_ulens) > max(iqr, 1))
                 column_is_homogeneous = not has_length_gap and (num_like < 0.1 or num_like > 0.9)
                 if not column_is_homogeneous:
+                    # a mixed column keeps the cluster's full type set (paper, Section IV-A)
+                    response_types = list(communities_types[community_index])
+                    for value in df[cname].dropna().unique():
+                        inverted_index.setdefault(value, set()).update(response_types)
+                    annotations_stage_1.setdefault(fname, {})[cname] = response_types
                     continue
                 response_ccta, _, _ = closed_cta_single(os.path.join(file_path, fname), log_path=logpath_ccta_refinement, api=api_ccta_refinement, model=model_ccta_refinement,
                                                         num_samples=num_samples, num_rows=num_rows, column=cname, semantic_types=communities_types[community_index],
